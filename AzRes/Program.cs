@@ -5,9 +5,9 @@
     using System.IO;
     using System.Linq;
 
-    using CsvHelper;
-
     using Newtonsoft.Json;
+
+    using OfficeOpenXml;
 
     class Program
     {
@@ -17,24 +17,31 @@
         {
             if (args?.Length > 0)
             {
-                var azRes = JsonConvert.DeserializeObject<AzResources>(File.ReadAllText(args[0]));
-                var outputFile = $"./{nameof(AzResources)}_{azRes.value.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Replace("/", "--")}.csv";
+                var azRes = JsonConvert.DeserializeObject<AzResources>(File.ReadAllText(args[0])).value.OrderBy(x => x.id);
+                var outputFile = $"./{nameof(AzResources)}{azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Replace("/", "_").Replace("subscriptions", "sub").Replace("resourceGroups", "rg")}.xlsx";
 
-                WriteToTarget(azRes.value.Select(x => new
+                WriteToTarget(azRes.Select(x =>
                 {
-                    id = x.id?.Split(Separator)?.LastOrDefault(),
-                    x.name,
-                    x.type,
-                    x.kind,
-                    x.location,
-                    managedBy = x.managedBy?.Split(Separator)?.LastOrDefault(),
-                    sku_name = x.sku?.name,
-                    sku_tier = x.sku?.tier,
-                    sku_capacity = x.sku?.capacity,
-                    sku_size = x.sku?.size,
-                    sku_family = x.sku?.family,
-                    tags = x.tags?.tier,
-                    identity = x.identity?.type
+                    var ids = x.id?.Split(Separator)?.LastOrDefault().Split('/');
+                    var result = new
+                    {
+                        COMPONENT = ids[0].Replace($"{nameof(Microsoft)}.", string.Empty, StringComparison.OrdinalIgnoreCase),
+                        MODULE = ids[1],
+                        ID = ids[2],
+                        NAME = x.name,
+                        TYPE = x.type,
+                        KIND = x.kind,
+                        LOCATION = x.location,
+                        MANAGED_BY = x.managedBy?.Split(Separator)?.LastOrDefault(),
+                        SKU_NAME = x.sku?.name,
+                        SKU_TIER = x.sku?.tier,
+                        SKU_CAPACITY = x.sku?.capacity,
+                        SKU_SIZE = x.sku?.size,
+                        SKU_FAMILY = x.sku?.family,
+                        TAGS = x.tags?.tier,
+                        IDENTITY = x.identity?.type
+                    };
+                    return result;
                 }), outputFile);
 
                 Console.WriteLine(outputFile);
@@ -49,9 +56,25 @@
 
         private static void WriteToTarget<T>(IEnumerable<T> records, string outputFile)
         {
-            using (var csvWriter = new CsvWriter(new StreamWriter(outputFile)))
+            // using (var csvWriter = new CsvWriter(new StreamWriter(outputFile)))
+            // {
+            //     csvWriter.WriteRecords(records);
+            // }
+
+            using (var pkg = new ExcelPackage(new FileInfo(outputFile)))
             {
-                csvWriter.WriteRecords(records);
+                var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(nameof(AzResources)));
+                if (ws != null)
+                {
+                    pkg.Workbook.Worksheets.Delete(ws);
+                }
+
+                ws = pkg.Workbook.Worksheets.Add(nameof(AzResources));
+                // ws.HeaderFooter.FirstHeader.CenteredText = outputFile.Replace("--", "/").Replace(".xlsx", string.Empty);
+                ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
+                ws.View.FreezePanes(2, 4);
+                ws.Cells.AutoFitColumns(50);
+                pkg.Save();
             }
         }
     }
