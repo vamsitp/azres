@@ -12,24 +12,26 @@
     class Program
     {
         private const string Separator = "/providers/";
+        private const char Slash = '/';
 
         static void Main(string[] args)
         {
             if (args?.Length > 0)
             {
-                var azRes = JsonConvert.DeserializeObject<AzResources>(File.ReadAllText(args[0])).value.OrderBy(x => x.id);
-                var outputFile = $"./{nameof(AzResources)}{azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Replace("/", "_").Replace("subscriptions", "sub").Replace("resourceGroups", "rg")}.xlsx";
+                var azRes = JsonConvert.DeserializeObject<AzResources>(GetJson(args[0])).value.OrderBy(x => x.id);
+                var outputFile = $"./{nameof(AzResources)}{azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Replace(Slash, '_').Replace("subscriptions", "sub").Replace("resourceGroups", "rg")}.xlsx";
 
                 WriteToTarget(azRes.Select(x =>
                 {
-                    var ids = x.id?.Split(Separator)?.LastOrDefault().Split('/');
+                    var ids = x.id?.Split(Separator)?.LastOrDefault().Split(Slash);
+                    var type = x.type?.Split(Slash, 3);
                     var result = new
                     {
-                        COMPONENT = ids[0].Replace($"{nameof(Microsoft)}.", string.Empty, StringComparison.OrdinalIgnoreCase),
-                        MODULE = ids[1],
+                        COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty, StringComparison.OrdinalIgnoreCase), // ids[0]
+                        MODULE = type[1], // ids[1]
+                        SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
                         ID = ids[2],
                         NAME = x.name,
-                        TYPE = x.type,
                         KIND = x.kind,
                         LOCATION = x.location,
                         MANAGED_BY = x.managedBy?.Split(Separator)?.LastOrDefault(),
@@ -44,14 +46,23 @@
                     return result;
                 }), outputFile);
 
-                Console.WriteLine(outputFile);
+                Console.WriteLine($"{outputFile}\nPress any key to quit...");
             }
             else
             {
                 Console.WriteLine("Save the JSON from the below link and provide the file-path as input.\nhttps://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources");
             }
 
-            Console.ReadLine();
+            Console.ReadKey();
+        }
+
+        private static string GetJson(string path)
+        {
+            //var req = WebRequest.Create(path);
+            //req.Method = "GET";
+            //req.Headers["Authorization"] = "Basic " + Convert.ToBase64String(Encoding.Default.GetBytes("username:password"));
+            //var resp = req.GetResponse() as HttpWebResponse;
+            return File.ReadAllText(path);
         }
 
         private static void WriteToTarget<T>(IEnumerable<T> records, string outputFile)
