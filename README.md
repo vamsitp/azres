@@ -1,5 +1,5 @@
 # azres
-CSV dump of Azure Resources
+Excel dump of Azure Resources
 ![image.png](Screenshot.png)
 
 #### USAGE
