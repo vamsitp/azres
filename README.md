@@ -1,5 +1,5 @@
 # azres
-Excel dump of Azure Resources
+Generate Excel dump of Azure Resources
 ![image.png](Screenshot.png)
 
 #### USAGE
@@ -11,8 +11,6 @@ https://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{reso
 dotnet tool install -g azres
 dotnet tool install -g azres --version 1.0.x
 
-# Install from local project path
-dotnet tool install -g --add-source ./bin azres
 
 # Uninstall
 dotnet tool uninstall -g azres
@@ -21,6 +19,9 @@ dotnet tool uninstall -g azres
 
 ##### CONTRIBUTION
 ```batch
+# Install from local project path
+dotnet tool install -g --add-source ./bin azres
+
 # Publish package to nuget.org
 nuget push ./bin/AzRes.1.0.0.nupkg -ApiKey <key> -Source https://api.nuget.org/v3/index.json
 ```
