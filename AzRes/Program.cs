@@ -113,13 +113,13 @@
 
                 ws = pkg.Workbook.Worksheets.Add(sheetName);
                 ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
+                ws.Cells.AutoFitColumns(50);
                 ws.InsertRow(1, 1);
                 var title = ws.Cells[1, 1];
                 title.Value = header.ToUpperInvariant();
                 title.Style.Font.Bold = true;
                 //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
                 ws.View.FreezePanes(3, 4);
-                ws.Cells.AutoFitColumns(50);
                 pkg.Save();
             }
         }
