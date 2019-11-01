@@ -18,7 +18,7 @@
         {
             if (args?.Length > 0)
             {
-                var outputFile = $"./{nameof(AzResources)}.xlsx";
+                var outputFile = Path.Combine(Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
@@ -35,6 +35,12 @@
 
                 foreach (var arg in args.Select((value, i) => new { i, value }))
                 {
+                    if (!File.Exists(arg.value))
+                    {
+                        Console.WriteLine($"File not found: {arg.value}");
+                        continue;
+                    }
+
                     var azRes = JsonConvert.DeserializeObject<AzResources>(GetJson(arg.value)).value.OrderBy(x => x.id);
                     var header = azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
 
@@ -64,7 +70,7 @@
                     }), arg.i + 1, header, outputFile);
                 }
 
-                Console.WriteLine($"{outputFile} updated.\nPress any key to exit...");
+                Console.WriteLine($"Output saved to: {outputFile}\nPress any key to exit...");
             }
             else
             {
@@ -91,6 +97,7 @@
                 var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(sheetName));
                 if (ws != null)
                 {
+                    Console.WriteLine($"Deleting and recreating existing Sheet: {sheetName}");
                     pkg.Workbook.Worksheets.Delete(ws);
                 }
 
