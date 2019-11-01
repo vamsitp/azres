@@ -2,6 +2,7 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Diagnostics;
     using System.IO;
     using System.Linq;
 
@@ -16,9 +17,10 @@
 
         static void Main(string[] args)
         {
+            var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                var outputFile = Path.Combine(Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                outputFile = Path.Combine(Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
@@ -70,14 +72,18 @@
                     }), arg.i + 1, header, outputFile);
                 }
 
-                Console.WriteLine($"Output saved to: {outputFile}\nPress any key to exit...");
+                Console.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...");
             }
             else
             {
                 Console.WriteLine("Save the JSON from the below link and provide the file-path as input.\nhttps://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources");
             }
 
-            Console.ReadKey();
+            var key = Console.ReadKey();
+            if (File.Exists(outputFile) && key.Key == ConsoleKey.O)
+            {
+                Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
+            }
         }
 
         private static string GetJson(string path)
@@ -100,6 +106,10 @@
                     Console.WriteLine($"Deleting and recreating existing Sheet: {sheetName}");
                     pkg.Workbook.Worksheets.Delete(ws);
                 }
+                else
+                {
+                    Console.WriteLine($"Creating Sheet: {sheetName}");
+                }
 
                 ws = pkg.Workbook.Worksheets.Add(sheetName);
                 ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
@@ -107,7 +117,7 @@
                 var title = ws.Cells[1, 1];
                 title.Value = header.ToUpperInvariant();
                 title.Style.Font.Bold = true;
-                title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
+                //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
                 ws.View.FreezePanes(3, 4);
                 ws.Cells.AutoFitColumns(50);
                 pkg.Save();
