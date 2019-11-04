@@ -10,8 +10,12 @@ https://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{reso
 ```batch
 # Install from nuget.org
 dotnet tool install -g azres
-dotnet tool install -g azres --version 1.0.x
+
+# Upgrade to latest version from nuget.org
 dotnet tool update -g azres --no-cache
+
+# Install a specific version from nuget.org
+dotnet tool install -g azres --version 1.0.x
 
 # Uninstall
 dotnet tool uninstall -g azres
