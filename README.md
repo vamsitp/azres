@@ -5,6 +5,7 @@ Generate Excel dump of Azure Resources
 #### USAGE
 Save the JSON from below link and provide the file-path as input to `azres.exe`
 https://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources
+> **NOTE**: You can provide multiple (space-separated) JSON files as inputs that would get combined into a single Excel file output.
 
 ```batch
 # Install from nuget.org
