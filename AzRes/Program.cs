@@ -5,6 +5,8 @@
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
+    using System.Net.Http;
+    using System.Threading.Tasks;
 
     using Newtonsoft.Json;
 
@@ -12,15 +14,22 @@
 
     class Program
     {
+        // Get the token from https://docs.microsoft.com/en-us/rest/api/monitor/diagnosticsettings/list by clicking on the TRY IT button
+        private const string Token = "";
         private const string Separator = "/providers/";
         private const char Slash = '/';
+        private static HttpClient Client = new HttpClient();
 
+        // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
         static void Main(string[] args)
         {
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                outputFile = Path.Combine(Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                Client.DefaultRequestHeaders.Remove("Authorization");
+                Client.DefaultRequestHeaders.Add("Authorization", "Bearer " + Token);
+
+                outputFile = Path.Combine(args[0].StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
@@ -37,17 +46,23 @@
 
                 foreach (var arg in args.Select((value, i) => new { i, value }))
                 {
-                    if (!File.Exists(arg.value))
+                    // if (!File.Exists(arg.value))
+                    // {
+                    //     Console.WriteLine($"File not found: {arg.value}");
+                    //     continue;
+                    // }
+
+                    var azRes = GetJson(arg.value).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
+                    if (azRes == null)
                     {
-                        Console.WriteLine($"File not found: {arg.value}");
-                        continue;
+                        Console.WriteLine("azRes null!");
+                        return;
                     }
 
-                    var azRes = JsonConvert.DeserializeObject<AzResources>(GetJson(arg.value)).value.OrderBy(x => x.id);
                     var header = azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
-
                     WriteToTarget(azRes.Select(x =>
                     {
+                        var diag = GetDiagnostics(x.id).GetAwaiter().GetResult();
                         var ids = x.id?.Split(Separator)?.LastOrDefault().Split(Slash);
                         var type = x.type?.Split(Slash, 3);
                         var result = new
@@ -66,7 +81,8 @@
                             SKU_SIZE = x.sku?.size,
                             SKU_FAMILY = x.sku?.family,
                             TAGS = x.tags?.tier,
-                            IDENTITY = x.identity?.type
+                            IDENTITY = x.identity?.type,
+                            DIAG = diag
                         };
                         return result;
                     }), arg.i + 1, header, outputFile);
@@ -86,13 +102,65 @@
             }
         }
 
-        private static string GetJson(string path)
+        private static async Task<AzResources> GetJson(string path)
         {
-            //var req = WebRequest.Create(path);
-            //req.Method = "GET";
-            //req.Headers["Authorization"] = "Basic " + Convert.ToBase64String(Encoding.Default.GetBytes("username:password"));
-            //var resp = req.GetResponse() as HttpWebResponse;
-            return File.ReadAllText(path);
+            var result = string.Empty;
+            if (File.Exists(path))
+            {
+                result = File.ReadAllText(path);
+            }
+            else
+            {
+                var response = await Client.GetAsync(path).ConfigureAwait(false);
+                result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            }
+
+            return JsonConvert.DeserializeObject<AzResources>(result);
+        }
+
+        private static async Task<string> GetDiagnostics(string resourceId)
+        {
+            string url = $"https://management.azure.com{resourceId}/providers/microsoft.insights/diagnosticSettings?api-version=2017-05-01-preview";
+            try
+            {
+                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                Console.WriteLine($"{response.StatusCode}: {url}");
+                var result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(result))
+                {
+                    // Console.WriteLine(result);
+                    var diag = JsonConvert.DeserializeObject<DiagInfo>(result);
+                    if (diag != null)
+                    {
+                        var diagInfo = diag?.value;
+                        if (diagInfo?.Length > 0)
+                        {
+                            Console.WriteLine("LOGS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.logs?.Select(y => $"{y?.category} - {y?.enabled}")))));
+                            Console.WriteLine("METRICS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.metrics?.Select(y => $"{y?.category} - {y?.enabled}")))));
+                            return response.StatusCode.ToString();
+                        }
+                        else if (diag.error != null)
+                        {
+                            Console.WriteLine($"ERROR: {diag?.error.code} - {diag?.error.message}");
+                        }
+                        else if (!string.IsNullOrWhiteSpace(diag.code))
+                        {
+                            Console.WriteLine($"WARNING: {diag?.code} - {diag?.message}");
+                        }
+                    }
+                }
+
+                return string.Empty;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                return string.Empty;
+            }
+            finally
+            {
+                Console.WriteLine("------------------------------");
+            }
         }
 
         private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, string outputFile)
@@ -123,5 +191,50 @@
                 pkg.Save();
             }
         }
+
+        ////private static async Task<string> GetAccessToken(string tenantId, string clientId, string clientKey)
+        ////{
+        ////    try
+        ////    {
+        ////        var authContextUrl = "https://login.windows.net/" + tenantId;
+        ////        var authenticationContext = new AuthenticationContext(authContextUrl);
+        ////        var credential = new ClientCredential(clientId, clientKey);
+        ////        var result = await authenticationContext.AcquireTokenAsync("https://management.azure.com/", credential);
+        ////        if (result == null)
+        ////        {
+        ////            throw new InvalidOperationException("Failed to obtain the JWT token");
+        ////        }
+
+        ////        var token = result.AccessToken;
+        ////        return token;
+        ////    }
+        ////    catch (Exception ex)
+        ////    {
+        ////        Console.WriteLine(ex.Message);
+        ////        return null;
+        ////    }
+        ////}
+
+        ////private static async Task<string> GetAuthTokenSilentAsync(string username, string password)
+        ////{
+        ////    AuthenticationResult result = null;
+        ////    try
+        ////    {
+        ////        var securePassword = new SecureString();
+        ////        foreach (char c in password)
+        ////        {
+        ////            securePassword.AppendChar(c);
+        ////        }
+
+        ////        var app = PublicClientApplicationBuilder.Create(ClientId).WithAuthority(this.Authority).Build();
+        ////        result = await app.AcquireTokenByUsernamePassword(new string[] { this.ApiScopes }, username, securePassword).ExecuteAsync().ConfigureAwait(false);
+        ////    }
+        ////    catch (Exception ex)
+        ////    {
+        ////        Console.WriteLine(ex);
+        ////    }
+
+        ////    return result.AccessToken;
+        ////}
     }
 }
