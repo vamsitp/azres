@@ -7,11 +7,9 @@
     using System.IO;
     using System.Linq;
     using System.Net.Http;
-    using System.Text;
     using System.Threading.Tasks;
 
     using Newtonsoft.Json;
-    using Newtonsoft.Json.Linq;
 
     using OfficeOpenXml;
 
@@ -209,18 +207,19 @@
         // https://stackoverflow.com/a/39590155
         private static async Task<string> GetAccessToken(string resourceUrl)
         {
-            var client = new HttpClient();
-            string tokenEndpoint = $"https://login.microsoftonline.com/{TenantId}/oauth2/token";
-            var body = $"resource={resourceUrl}&client_id={ClientId}&client_secret={ClientSecret}&grant_type=password&username={UserName}&password={Password}";
-            var stringContent = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
-            var result = await client.PostAsync(tokenEndpoint, stringContent).ContinueWith<string>((response) =>
-            {
-                return response.Result.Content.ReadAsStringAsync().Result;
-            });
+            ////var client = new HttpClient();
+            ////string tokenEndpoint = $"https://login.microsoftonline.com/{TenantId}/oauth2/token";
+            ////var body = $"resource={resourceUrl}&client_id={ClientId}&client_secret={ClientSecret}&grant_type=password&username={UserName}&password={Password}";
+            ////var stringContent = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+            ////var result = await client.PostAsync(tokenEndpoint, stringContent).ContinueWith<string>((response) =>
+            ////{
+            ////    return response.Result.Content.ReadAsStringAsync().Result;
+            ////});
 
-            var jobject = JObject.Parse(result);
-            var token = jobject["access_token"].Value<string>();
-            return token;
+            ////var jobject = JObject.Parse(result);
+            ////var token = jobject["access_token"].Value<string>();
+            //// return token;
+            return Password;
         }
 
         ////private static async Task<string> GetAccessToken(string tenantId, string clientId, string clientKey)
