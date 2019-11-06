@@ -2,23 +2,31 @@
 {
     using System;
     using System.Collections.Generic;
+    using System.Configuration;
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
     using System.Net.Http;
+    using System.Text;
     using System.Threading.Tasks;
 
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
 
     using OfficeOpenXml;
 
     class Program
     {
         // Get the token from https://docs.microsoft.com/en-us/rest/api/monitor/diagnosticsettings/list by clicking on the TRY IT button
-        private const string Token = "";
         private const string Separator = "/providers/";
         private const char Slash = '/';
         private static HttpClient Client = new HttpClient();
+
+        private static string TenantId => ConfigurationManager.AppSettings[nameof(TenantId)];
+        private static string ClientId => ConfigurationManager.AppSettings[nameof(ClientId)];
+        private static string ClientSecret => ConfigurationManager.AppSettings[nameof(ClientSecret)];
+        private static string UserName => ConfigurationManager.AppSettings[nameof(UserName)];
+        private static string Password => ConfigurationManager.AppSettings[nameof(Password)];
 
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
         static void Main(string[] args)
@@ -26,9 +34,6 @@
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                Client.DefaultRequestHeaders.Remove("Authorization");
-                Client.DefaultRequestHeaders.Add("Authorization", "Bearer " + Token);
-
                 outputFile = Path.Combine(args[0].StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
@@ -82,7 +87,7 @@
                             SKU_FAMILY = x.sku?.family,
                             TAGS = x.tags?.tier,
                             IDENTITY = x.identity?.type,
-                            DIAG = diag
+                            DIAG_INFO = diag
                         };
                         return result;
                     }), arg.i + 1, header, outputFile);
@@ -111,6 +116,7 @@
             }
             else
             {
+                await AddAuthHeader(path).ConfigureAwait(false);
                 var response = await Client.GetAsync(path).ConfigureAwait(false);
                 result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
             }
@@ -118,49 +124,56 @@
             return JsonConvert.DeserializeObject<AzResources>(result);
         }
 
+        private static async Task AddAuthHeader(string path)
+        {
+            var token = await GetAccessToken(path);
+            Client.DefaultRequestHeaders.Remove("Authorization");
+            Client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+        }
+
         private static async Task<string> GetDiagnostics(string resourceId)
         {
+            var result = string.Empty;
             string url = $"https://management.azure.com{resourceId}/providers/microsoft.insights/diagnosticSettings?api-version=2017-05-01-preview";
             try
             {
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
                 Console.WriteLine($"{response.StatusCode}: {url}");
-                var result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(result))
+                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(output))
                 {
                     // Console.WriteLine(result);
-                    var diag = JsonConvert.DeserializeObject<DiagInfo>(result);
+                    var diag = JsonConvert.DeserializeObject<DiagInfo>(output);
                     if (diag != null)
                     {
                         var diagInfo = diag?.value;
                         if (diagInfo?.Length > 0)
                         {
-                            Console.WriteLine("LOGS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.logs?.Select(y => $"{y?.category} - {y?.enabled}")))));
-                            Console.WriteLine("METRICS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.metrics?.Select(y => $"{y?.category} - {y?.enabled}")))));
-                            return response.StatusCode.ToString();
+                            result = "LOGS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.logs?.Select(y => $"{y?.category} - {y?.enabled}"))));
+                            result += $"{Environment.NewLine}METRICS: " + string.Join(Environment.NewLine, diagInfo?.Select(x => string.Join(", ", x?.properties?.metrics?.Select(y => $"{y?.category} - {y?.enabled}"))));
                         }
                         else if (diag.error != null)
                         {
-                            Console.WriteLine($"ERROR: {diag?.error.code} - {diag?.error.message}");
+                            result = $"ERROR: {diag?.error.code} - {diag?.error.message}";
                         }
                         else if (!string.IsNullOrWhiteSpace(diag.code))
                         {
-                            Console.WriteLine($"WARNING: {diag?.code} - {diag?.message}");
+                            result = $"WARNING: {diag?.code} - {diag?.message}";
                         }
                     }
                 }
-
-                return string.Empty;
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
-                return string.Empty;
+                result = ex.Message;
             }
             finally
             {
+                Console.WriteLine(result);
                 Console.WriteLine("------------------------------");
             }
+
+            return result;
         }
 
         private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, string outputFile)
@@ -192,12 +205,33 @@
             }
         }
 
+        // https://stackoverflow.com/a/40499342
+        // https://stackoverflow.com/a/39590155
+        private static async Task<string> GetAccessToken(string resourceUrl)
+        {
+            var client = new HttpClient();
+            string tokenEndpoint = $"https://login.microsoftonline.com/{TenantId}/oauth2/token";
+            var body = $"resource={resourceUrl}&client_id={ClientId}&client_secret={ClientSecret}&grant_type=password&username={UserName}&password={Password}";
+            var stringContent = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
+            var result = await client.PostAsync(tokenEndpoint, stringContent).ContinueWith<string>((response) =>
+            {
+                return response.Result.Content.ReadAsStringAsync().Result;
+            });
+
+            var jobject = JObject.Parse(result);
+            var token = jobject["access_token"].Value<string>();
+            return token;
+        }
+
         ////private static async Task<string> GetAccessToken(string tenantId, string clientId, string clientKey)
         ////{
         ////    try
         ////    {
         ////        var authContextUrl = "https://login.windows.net/" + tenantId;
         ////        var authenticationContext = new AuthenticationContext(authContextUrl);
+        ////
+        ////        // https://github.com/AzureAD/azure-activedirectory-library-for-dotnet/wiki/Acquiring-tokens-with-username-and-password
+        ////        // await context.AcquireTokenAsync(resource, clientId, new UserPasswordCredential("john@contoso.com", johnsPassword))
         ////        var credential = new ClientCredential(clientId, clientKey);
         ////        var result = await authenticationContext.AcquireTokenAsync("https://management.azure.com/", credential);
         ////        if (result == null)
