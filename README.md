@@ -3,13 +3,13 @@ Generate Excel dump of Azure Resources
 ![image.png](Screenshot.png)
 
 #### USAGE
-Save the JSON from below link and provide the file-path as input to `azres.exe`
-https://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources
+`azres.exe` tenant`/`subscription`/`resourceGroup <br/>
+e.g. `azres.exe Tenant_Id/Subscription_Guid/ResourceGroup_Name`
 
 (OR)
 
-Pass the direct https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources
-> **PRE-REQ**: Grab the `Bearer-token` from https://docs.microsoft.com/en-us/rest/api/resources/resources/list (click *Try-it*) and set it as the `Password` in App.config
+Save the JSON from below link and provide the file-path as input to `azres.exe` <br/>
+https://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources
 
 > **GENERAL NOTE**: You can provide multiple (space-separated) JSON files / Endpoints as inputs that would get combined into a single Excel file output.
 ```batch

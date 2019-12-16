@@ -18,13 +18,11 @@
         // Get the token from https://docs.microsoft.com/en-us/rest/api/monitor/diagnosticsettings/list by clicking on the TRY IT button
         private const string Separator = "/providers/";
         private const char Slash = '/';
+        private const string AuthHeader = "Authorization";
+        private const string Bearer = "Bearer ";
         private static HttpClient Client = new HttpClient();
 
         private static string TenantId => ConfigurationManager.AppSettings[nameof(TenantId)];
-        private static string ClientId => ConfigurationManager.AppSettings[nameof(ClientId)];
-        private static string ClientSecret => ConfigurationManager.AppSettings[nameof(ClientSecret)];
-        private static string UserName => ConfigurationManager.AppSettings[nameof(UserName)];
-        private static string Password => ConfigurationManager.AppSettings[nameof(Password)];
 
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
         static void Main(string[] args)
@@ -32,7 +30,7 @@
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                outputFile = Path.Combine(args[0].StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join('_', args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                outputFile = Path.Combine(args[0].StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
@@ -47,7 +45,12 @@
                     }
                 }
 
-                foreach (var arg in args.Select((value, i) => new { i, value }))
+                foreach (var arg in args.Select((value, i) =>
+                {
+                    var val = value.Split('/');
+                    var result = new { i, tenant = val[0], sub = val[1], rg = val[2] };
+                    return result;
+                }))
                 {
                     // if (!File.Exists(arg.value))
                     // {
@@ -55,29 +58,31 @@
                     //     continue;
                     // }
 
-                    var azRes = GetJson(arg.value).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
+                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version=2017-05-10";
+                    var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
                     if (azRes == null)
                     {
-                        Console.WriteLine("azRes null!");
+                        Console.WriteLine("\nPress any key to quit...");
+                        Console.ReadKey();
                         return;
                     }
 
-                    var header = azRes.FirstOrDefault().id?.Split(Separator)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
+                    var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
                     WriteToTarget(azRes.Select(x =>
                     {
                         var diag = GetDiagnostics(x.id).GetAwaiter().GetResult();
-                        var ids = x.id?.Split(Separator)?.LastOrDefault().Split(Slash);
-                        var type = x.type?.Split(Slash, 3);
+                        var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
+                        var type = x.type?.Split(new[] { Slash }, 3);
                         var result = new
                         {
-                            COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty, StringComparison.OrdinalIgnoreCase), // ids[0]
+                            COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty).Replace($"{nameof(Microsoft).ToUpperInvariant()}.", string.Empty).Replace($"{nameof(Microsoft).ToLowerInvariant()}.", string.Empty), // ids[0]
                             MODULE = type[1], // ids[1]
                             SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
                             ID = ids[2],
                             NAME = x.name,
                             KIND = x.kind,
                             LOCATION = x.location,
-                            MANAGED_BY = x.managedBy?.Split(Separator)?.LastOrDefault(),
+                            MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
                             SKU_NAME = x.sku?.name,
                             SKU_TIER = x.sku?.tier,
                             SKU_CAPACITY = x.sku?.capacity,
@@ -101,11 +106,11 @@
             var key = Console.ReadKey();
             if (File.Exists(outputFile) && key.Key == ConsoleKey.O)
             {
-                Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(Path.Combine(Environment.CurrentDirectory, outputFile)) { UseShellExecute = true });
             }
         }
 
-        private static async Task<AzResources> GetJson(string path)
+        private static async Task<AzResources> GetJson(string path, string tenant)
         {
             var result = string.Empty;
             if (File.Exists(path))
@@ -114,19 +119,31 @@
             }
             else
             {
-                await AddAuthHeader(path).ConfigureAwait(false);
+                await AddAuthHeader(path, tenant).ConfigureAwait(false);
                 var response = await Client.GetAsync(path).ConfigureAwait(false);
                 result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var err = JsonConvert.DeserializeObject<InvalidAuthTokenError>(result);
+                    if (err == null)
+                    {
+                        Console.WriteLine($"{response.StatusCode}: {response.ReasonPhrase}\n{result}");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"{response.StatusCode}: {response.ReasonPhrase}\n{err.error.code}: {err.error.message}");
+                    }
+                }
             }
 
             return JsonConvert.DeserializeObject<AzResources>(result);
         }
 
-        private static async Task AddAuthHeader(string path)
+        private static async Task AddAuthHeader(string path, string tenant)
         {
-            var token = await GetAccessToken(path);
-            Client.DefaultRequestHeaders.Remove("Authorization");
-            Client.DefaultRequestHeaders.Add("Authorization", "Bearer " + token);
+            var token = await AuthHelper.GetAuthTokenAsync(tenant);
+            Client.DefaultRequestHeaders.Remove(AuthHeader);
+            Client.DefaultRequestHeaders.Add(AuthHeader, Bearer + token);
         }
 
         private static async Task<string> GetDiagnostics(string resourceId)
@@ -158,6 +175,10 @@
                         {
                             result = $"WARNING: {diag?.code} - {diag?.message}";
                         }
+                    }
+                    else
+                    {
+                        result = output;
                     }
                 }
             }
@@ -191,83 +212,21 @@
                 }
 
                 ws = pkg.Workbook.Worksheets.Add(sheetName);
+                ws.Cells.Style.Font.Name = "Segoe UI";
+                ws.Cells.Style.Font.Size = 10;
+                ws.Cells.Style.VerticalAlignment = OfficeOpenXml.Style.ExcelVerticalAlignment.Top;
+                ws.Cells.Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Left;
                 ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
-                ws.Cells.AutoFitColumns(50);
                 ws.InsertRow(1, 1);
                 var title = ws.Cells[1, 1];
                 title.Value = header.ToUpperInvariant();
                 title.Style.Font.Bold = true;
                 //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
+                ws.Column(ws.Cells.Columns).Style.WrapText = true;
                 ws.View.FreezePanes(3, 4);
+                ws.Cells.AutoFitColumns(25);
                 pkg.Save();
             }
         }
-
-        // https://stackoverflow.com/a/40499342
-        // https://stackoverflow.com/a/39590155
-        private static async Task<string> GetAccessToken(string resourceUrl)
-        {
-            ////var client = new HttpClient();
-            ////string tokenEndpoint = $"https://login.microsoftonline.com/{TenantId}/oauth2/token";
-            ////var body = $"resource={resourceUrl}&client_id={ClientId}&client_secret={ClientSecret}&grant_type=password&username={UserName}&password={Password}";
-            ////var stringContent = new StringContent(body, Encoding.UTF8, "application/x-www-form-urlencoded");
-            ////var result = await client.PostAsync(tokenEndpoint, stringContent).ContinueWith<string>((response) =>
-            ////{
-            ////    return response.Result.Content.ReadAsStringAsync().Result;
-            ////});
-
-            ////var jobject = JObject.Parse(result);
-            ////var token = jobject["access_token"].Value<string>();
-            //// return token;
-            return Password;
-        }
-
-        ////private static async Task<string> GetAccessToken(string tenantId, string clientId, string clientKey)
-        ////{
-        ////    try
-        ////    {
-        ////        var authContextUrl = "https://login.windows.net/" + tenantId;
-        ////        var authenticationContext = new AuthenticationContext(authContextUrl);
-        ////
-        ////        // https://github.com/AzureAD/azure-activedirectory-library-for-dotnet/wiki/Acquiring-tokens-with-username-and-password
-        ////        // await context.AcquireTokenAsync(resource, clientId, new UserPasswordCredential("john@contoso.com", johnsPassword))
-        ////        var credential = new ClientCredential(clientId, clientKey);
-        ////        var result = await authenticationContext.AcquireTokenAsync("https://management.azure.com/", credential);
-        ////        if (result == null)
-        ////        {
-        ////            throw new InvalidOperationException("Failed to obtain the JWT token");
-        ////        }
-
-        ////        var token = result.AccessToken;
-        ////        return token;
-        ////    }
-        ////    catch (Exception ex)
-        ////    {
-        ////        Console.WriteLine(ex.Message);
-        ////        return null;
-        ////    }
-        ////}
-
-        ////private static async Task<string> GetAuthTokenSilentAsync(string username, string password)
-        ////{
-        ////    AuthenticationResult result = null;
-        ////    try
-        ////    {
-        ////        var securePassword = new SecureString();
-        ////        foreach (char c in password)
-        ////        {
-        ////            securePassword.AppendChar(c);
-        ////        }
-
-        ////        var app = PublicClientApplicationBuilder.Create(ClientId).WithAuthority(this.Authority).Build();
-        ////        result = await app.AcquireTokenByUsernamePassword(new string[] { this.ApiScopes }, username, securePassword).ExecuteAsync().ConfigureAwait(false);
-        ////    }
-        ////    catch (Exception ex)
-        ////    {
-        ////        Console.WriteLine(ex);
-        ////    }
-
-        ////    return result.AccessToken;
-        ////}
     }
 }

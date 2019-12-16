@@ -49,3 +49,16 @@ public class Identity
     public string tenantId { get; set; }
     public string type { get; set; }
 }
+
+
+public class InvalidAuthTokenError
+{
+    public Error error { get; set; }
+}
+
+public class Error
+{
+    public string code { get; set; }
+    public string message { get; set; }
+}
+
