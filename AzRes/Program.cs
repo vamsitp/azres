@@ -30,7 +30,7 @@
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                outputFile = Path.Combine(args[0].StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
