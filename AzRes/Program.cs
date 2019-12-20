@@ -9,7 +9,10 @@
     using System.Net.Http;
     using System.Threading.Tasks;
 
+    using ColoredConsole;
+
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
 
     using OfficeOpenXml;
 
@@ -20,6 +23,13 @@
         private const char Slash = '/';
         private const string AuthHeader = "Authorization";
         private const string Bearer = "Bearer ";
+        private readonly static string[] ApiVersions = new[] { "2019-08-01", "2018-02-01", "2017-05-10", "2016-10-01", "2016-06-01" };
+        private readonly static Dictionary<string, string> ApiVersionMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "AnalysisServices/servers", "2016-05-16" },
+            { "Logic/workflows", "2016-06-01" },
+        };
+
         private static HttpClient Client = new HttpClient();
 
         private static string TenantId => ConfigurationManager.AppSettings[nameof(TenantId)];
@@ -33,7 +43,7 @@
                 outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
-                    Console.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)");
+                    ColorConsole.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)".Yellow());
                     var input = Console.ReadKey();
                     if (input.Key != ConsoleKey.Y)
                     {
@@ -58,11 +68,11 @@
                     //     continue;
                     // }
 
-                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version=2017-05-10";
+                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={ApiVersions[2]}";
                     var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
                     if (azRes == null)
                     {
-                        Console.WriteLine("\nPress any key to quit...");
+                        ColorConsole.WriteLine("\nPress any key to quit...");
                         Console.ReadKey();
                         return;
                     }
@@ -70,7 +80,10 @@
                     var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
                     WriteToTarget(azRes.Select(x =>
                     {
-                        var diag = GetDiagnostics(x.id).GetAwaiter().GetResult();
+                        ColorConsole.WriteLine($"\n{x.id}".Black().OnWhite());
+                        var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
+                        var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
+                        var diag = GetDiagnostics(x.id, "2017-05-01-preview").GetAwaiter().GetResult();
                         var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
                         var type = x.type?.Split(new[] { Slash }, 3);
                         var result = new
@@ -82,6 +95,8 @@
                             NAME = x.name,
                             KIND = x.kind,
                             LOCATION = x.location,
+                            PROPS = props,
+                            DIAG_INFO = diag,
                             MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
                             SKU_NAME = x.sku?.name,
                             SKU_TIER = x.sku?.tier,
@@ -90,17 +105,16 @@
                             SKU_FAMILY = x.sku?.family,
                             TAGS = x.tags?.tier,
                             IDENTITY = x.identity?.type,
-                            DIAG_INFO = diag
                         };
                         return result;
                     }), arg.i + 1, header, outputFile);
                 }
 
-                Console.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...");
+                ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
             }
             else
             {
-                Console.WriteLine("Save the JSON from the below link and provide the file-path as input.\nhttps://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources");
+                ColorConsole.WriteLine("Save the JSON from the below link and provide the file-path as input.\nhttps://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources".Yellow());
             }
 
             var key = Console.ReadKey();
@@ -127,11 +141,11 @@
                     var err = JsonConvert.DeserializeObject<InvalidAuthTokenError>(result);
                     if (err == null)
                     {
-                        Console.WriteLine($"{response.StatusCode}: {response.ReasonPhrase}\n{result}");
+                        ColorConsole.WriteLine($"GetJson - {response.StatusCode}: {response.ReasonPhrase}\n{result}");
                     }
                     else
                     {
-                        Console.WriteLine($"{response.StatusCode}: {response.ReasonPhrase}\n{err.error.code}: {err.error.message}");
+                        ColorConsole.WriteLine($"GetJson - {response.StatusCode}: {response.ReasonPhrase}\n{err.error.code}: {err.error.message}".White().OnRed());
                     }
                 }
             }
@@ -146,18 +160,104 @@
             Client.DefaultRequestHeaders.Add(AuthHeader, Bearer + token);
         }
 
-        private static async Task<string> GetDiagnostics(string resourceId)
+        // Credit: https://zimmergren.net/developing-with-azure-resource-manager-part-5-tip-get-the-available-api-version-for-the-arm-endpoints/
+        private static async Task<string> GetApiVersion(string resourceType, string subscription)
         {
-            var result = string.Empty;
-            string url = $"https://management.azure.com{resourceId}/providers/microsoft.insights/diagnosticSettings?api-version=2017-05-01-preview";
+            var result = "2019-08-01";
             try
             {
+                var types = resourceType.Split(new[] { '/' }, 2);
+                var url = $"https://management.azure.com/subscriptions/{subscription}/providers/{types[0]}?api-version={result}";
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                Console.WriteLine($"{response.StatusCode}: {url}");
+                ColorConsole.WriteLine($"GetApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkGreen());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
-                    // Console.WriteLine(result);
+                    var obj = JsonConvert.DeserializeObject<ResourceType>(output);
+                    if (obj != null)
+                    {
+                        result = obj.resourceTypes.SingleOrDefault(x => x.resourceType.Equals(types[1])).apiVersions.FirstOrDefault();
+                    }
+                    else
+                    {
+                        ColorConsole.WriteLine($"GetApiVersion - {subscription}/{resourceType}: Unable to deserialize:\n{output}".Yellow());
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ColorConsole.WriteLine($"GetApiVersion: {ex.GetType()} - {ex.Message}".White().OnRed());
+            }
+            finally
+            {
+                ColorConsole.WriteLine(result);
+                ColorConsole.WriteLine("------------------------------");
+            }
+
+            return result;
+        }
+
+        private static async Task<string> GetProperties(string resource, string apiVersion)
+        {
+            var result = string.Empty;
+            try
+            {
+                var url = $"https://management.azure.com{resource}?api-version={apiVersion}";
+                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                ColorConsole.WriteLine($"GetProperties - {response.StatusCode}: {resource}".White().OnDarkBlue());
+                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(output))
+                {
+                    var obj = JsonConvert.DeserializeObject<JObject>(output);
+                    var dict = FlattenJson(obj);
+                    if (dict?.Count > 0)
+                    {
+                        //var props = obj.SelectTokens("..properties");
+                        //if (props.Count() > 1)
+                        //{
+                        //    foreach (var prop in props)
+                        //    {
+                        //        result += "-----" + Environment.NewLine + string.Join(Environment.NewLine, prop.Select(x => $"{x.Path.Replace("properties.", string.Empty)}: {x.First.ToString()}"));
+                        //    }
+                        //}
+                        //else
+                        //{
+                        //    result = string.Join(Environment.NewLine, props.FirstOrDefault().Select(x => $"{x.Path.Replace("properties.", string.Empty)}: {x.First.ToString()}"));
+                        //}
+                        result = string.Join(Environment.NewLine, dict.Where(x => x.Key.Contains("properties.")).Select(x => $"{x.Key.Replace("properties.", string.Empty)}: {x.Value}"));
+                    }
+                    else
+                    {
+                        ColorConsole.WriteLine($"{resource}: Unable to deserialize:\n{output}".Yellow());
+                        result = output;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                ColorConsole.WriteLine($"{ex.GetType()} - {ex.Message}".White().OnRed());
+            }
+            finally
+            {
+                ColorConsole.WriteLine(result);
+                ColorConsole.WriteLine("------------------------------");
+            }
+
+            return result;
+
+        }
+
+        private static async Task<string> GetDiagnostics(string resource, string apiVersion)
+        {
+            var result = string.Empty;
+            string url = $"https://management.azure.com{resource}/providers/microsoft.insights/diagnosticSettings?api-version={apiVersion}";
+            try
+            {
+                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                ColorConsole.WriteLine($"GetDiagnostics - {response.StatusCode}: {url}".White().OnDarkMagenta());
+                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(output))
+                {
                     var diag = JsonConvert.DeserializeObject<DiagInfo>(output);
                     if (diag != null)
                     {
@@ -178,18 +278,19 @@
                     }
                     else
                     {
+                        ColorConsole.WriteLine($"{resource}: Unable to deserialize:\n{output}".Yellow());
                         result = output;
                     }
                 }
             }
             catch (Exception ex)
             {
-                result = ex.Message;
+                ColorConsole.WriteLine($"{ex.GetType()} - {ex.Message}".White().OnRed());
             }
             finally
             {
-                Console.WriteLine(result);
-                Console.WriteLine("------------------------------");
+                ColorConsole.WriteLine(result);
+                ColorConsole.WriteLine("------------------------------");
             }
 
             return result;
@@ -203,12 +304,12 @@
                 var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(sheetName));
                 if (ws != null)
                 {
-                    Console.WriteLine($"Deleting and recreating existing Sheet: {sheetName}");
+                    ColorConsole.WriteLine($"Deleting and recreating existing Sheet: {sheetName}".Yellow());
                     pkg.Workbook.Worksheets.Delete(ws);
                 }
                 else
                 {
-                    Console.WriteLine($"Creating Sheet: {sheetName}");
+                    ColorConsole.WriteLine($"Creating Sheet: {sheetName}");
                 }
 
                 ws = pkg.Workbook.Worksheets.Add(sheetName);
@@ -227,6 +328,19 @@
                 ws.Cells.AutoFitColumns(25);
                 pkg.Save();
             }
+        }
+
+        // Credit: https://stackoverflow.com/a/35838986
+        private static Dictionary<string, string> FlattenJson(JObject jsonObject)
+        {
+            var tokens = jsonObject.Descendants().Where(p => p.Count() == 0);
+            var results = tokens.Aggregate(new Dictionary<string, string>(), (props, token) =>
+            {
+                props.Add(token.Path, token.ToString());
+                return props;
+            });
+
+            return results;
         }
     }
 }

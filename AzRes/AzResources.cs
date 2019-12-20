@@ -62,3 +62,27 @@ public class Error
     public string message { get; set; }
 }
 
+
+public class ResourceType
+{
+    public string id { get; set; }
+    public string _namespace { get; set; }
+    public Authorization[] authorizations { get; set; }
+    public Resourcetype[] resourceTypes { get; set; }
+    public string registrationState { get; set; }
+    public string registrationPolicy { get; set; }
+}
+
+public class Authorization
+{
+    public string applicationId { get; set; }
+    public string roleDefinitionId { get; set; }
+}
+
+public class Resourcetype
+{
+    public string resourceType { get; set; }
+    public string[] locations { get; set; }
+    public string[] apiVersions { get; set; }
+    public string capabilities { get; set; }
+}
