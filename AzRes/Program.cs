@@ -80,7 +80,7 @@
                     var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
                     WriteToTarget(azRes.Select(x =>
                     {
-                        ColorConsole.WriteLine($"\n{x.id}".Black().OnWhite());
+                        ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
                         var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
                         var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
                         var diag = GetDiagnostics(x.id, "2017-05-01-preview").GetAwaiter().GetResult();
@@ -169,7 +169,7 @@
                 var types = resourceType.Split(new[] { '/' }, 2);
                 var url = $"https://management.azure.com/subscriptions/{subscription}/providers/{types[0]}?api-version={result}";
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                ColorConsole.WriteLine($"GetApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkGreen());
+                ColorConsole.WriteLine($"GetApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkBlue());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
@@ -204,7 +204,7 @@
             {
                 var url = $"https://management.azure.com{resource}?api-version={apiVersion}";
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                ColorConsole.WriteLine($"GetProperties - {response.StatusCode}: {resource}".White().OnDarkBlue());
+                ColorConsole.WriteLine($"GetProperties - {response.StatusCode}: {resource}".White().OnDarkGreen());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
