@@ -76,7 +76,7 @@
                         ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
                         var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
                         var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
-                        var diag = GetDiagnostics(x.id, diagApiVersion).GetAwaiter().GetResult();
+                        var diag = GetDiagnosticSettings(x.id, diagApiVersion).GetAwaiter().GetResult();
                         var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
                         var type = x.type?.Split(new[] { Slash }, 3);
                         var result = new
@@ -126,7 +126,7 @@
             }
             else
             {
-                await AddAuthHeader(path, tenant).ConfigureAwait(false);
+                AddAuthHeader(path, tenant);
                 var response = await Client.GetAsync(path).ConfigureAwait(false);
                 result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
@@ -146,9 +146,9 @@
             return JsonConvert.DeserializeObject<AzResources>(result);
         }
 
-        private static async Task AddAuthHeader(string path, string tenant)
+        private static void AddAuthHeader(string path, string tenant)
         {
-            var token = await AuthHelper.GetAuthTokenAsync(tenant);
+            var token = AuthHelper.GetAuthToken(tenant);
             Client.DefaultRequestHeaders.Remove(AuthHeader);
             Client.DefaultRequestHeaders.Add(AuthHeader, Bearer + token);
         }
@@ -162,7 +162,7 @@
                 var types = resourceType.Split(new[] { '/' }, 2);
                 var url = $"https://management.azure.com/subscriptions/{subscription}/providers/{types[0]}?api-version={result}";
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                ColorConsole.WriteLine($"GetApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkBlue());
+                ColorConsole.WriteLine($"ApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkBlue());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
@@ -173,13 +173,13 @@
                     }
                     else
                     {
-                        ColorConsole.WriteLine($"GetApiVersion - {subscription}/{resourceType}: Unable to deserialize:\n{output}".Yellow());
+                        ColorConsole.WriteLine($"{subscription}/{resourceType}: Unable to deserialize:\n{output}".Yellow());
                     }
                 }
             }
             catch (Exception ex)
             {
-                ColorConsole.WriteLine($"GetApiVersion: {ex.GetType()} - {ex.Message}".White().OnRed());
+                ColorConsole.WriteLine($"{ex.GetType()} - {ex.Message}".White().OnRed());
             }
             finally
             {
@@ -196,7 +196,7 @@
             {
                 var url = $"https://management.azure.com{resource}?api-version={apiVersion}";
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                ColorConsole.WriteLine($"GetProperties - {response.StatusCode}: {resource}".White().OnDarkGreen());
+                ColorConsole.WriteLine($"Properties - {response.StatusCode}: {resource}".White().OnDarkGreen());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
@@ -205,7 +205,7 @@
                     if (dict?.Count > 0)
                     {
                         result = string.Join(Environment.NewLine, dict
-                            .Where(x => x.Key.Contains("properties.") && (PropsKeyFilters.Any(y => x.Key.IndexOf(y, StringComparison.OrdinalIgnoreCase) >= 0) || PropsValueFilters.Any(y => x.Value.Split('.').Contains(y))))
+                            .Where(x => x.Key.Contains("properties.") && (PropsKeyFilters.Any(y => x.Key.IndexOf(y, StringComparison.OrdinalIgnoreCase) >= 0) || PropsValueFilters.Any(y => x.Value.Contains(".") && x.Value.Split('.').Contains(y))))
                             .Select(x => $"{x.Key.Replace("properties.", string.Empty)}: {x.Value}"));
                     }
                     else
@@ -228,14 +228,14 @@
 
         }
 
-        private static async Task<string> GetDiagnostics(string resource, string apiVersion)
+        private static async Task<string> GetDiagnosticSettings(string resource, string apiVersion)
         {
             var result = string.Empty;
             string url = $"https://management.azure.com{resource}/providers/microsoft.insights/diagnosticSettings?api-version={apiVersion}";
             try
             {
                 var response = await Client.GetAsync(url).ConfigureAwait(false);
-                ColorConsole.WriteLine($"GetDiagnostics - {response.StatusCode}: {url}".White().OnDarkMagenta());
+                ColorConsole.WriteLine($"DiagnosticSettings - {response.StatusCode}: {resource}".White().OnDarkMagenta());
                 var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(output))
                 {
