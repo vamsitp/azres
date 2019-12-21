@@ -2,7 +2,6 @@
 {
     using System;
     using System.Collections.Generic;
-    using System.Configuration;
     using System.Diagnostics;
     using System.IO;
     using System.Linq;
@@ -24,6 +23,7 @@
         private const string AuthHeader = "Authorization";
         private const string Bearer = "Bearer ";
         private const string BaseApiVersion = "2017-05-10";
+        private const string DefaultApiVersion = "2019-08-01";
 
         private readonly static string[] PropsKeyFilters = new[] { "dns", "url", "uri", "link", "host", "path", "cidr", "dns", "fqdn", "address", "server", "gateway", "endpoint", "consortium", "connection"  };
         private readonly static string[] PropsValueFilters = new[] { "://", ".com", ".net", ".io" };
@@ -58,7 +58,7 @@
                     return result;
                 }))
                 {
-                    ColorConsole.WriteLine($"\nTenant: {arg.tenant} / Subscription: {arg.sub} / ResourceGroup: {arg.rg}".Black().OnWhite());
+                    ColorConsole.WriteLine($"\nTenant: {arg.tenant}\nSubscription: {arg.sub}\nResourceGroup: {arg.rg}".Black().OnWhite());
                     var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
                     var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
                     if (azRes == null)
@@ -68,6 +68,7 @@
                         return;
                     }
 
+                    var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
                     var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
                     WriteToTarget(azRes.Select(x =>
                     {
@@ -75,7 +76,7 @@
                         ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
                         var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
                         var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
-                        var diag = GetDiagnostics(x.id, "2017-05-01-preview").GetAwaiter().GetResult();
+                        var diag = GetDiagnostics(x.id, diagApiVersion).GetAwaiter().GetResult();
                         var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
                         var type = x.type?.Split(new[] { Slash }, 3);
                         var result = new
@@ -155,7 +156,7 @@
         // Credit: https://zimmergren.net/developing-with-azure-resource-manager-part-5-tip-get-the-available-api-version-for-the-arm-endpoints/
         private static async Task<string> GetApiVersion(string resourceType, string subscription)
         {
-            var result = "2019-08-01";
+            var result = DefaultApiVersion;
             try
             {
                 var types = resourceType.Split(new[] { '/' }, 2);
