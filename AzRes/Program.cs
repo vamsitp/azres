@@ -23,16 +23,12 @@
         private const char Slash = '/';
         private const string AuthHeader = "Authorization";
         private const string Bearer = "Bearer ";
-        private readonly static string[] ApiVersions = new[] { "2019-08-01", "2018-02-01", "2017-05-10", "2016-10-01", "2016-06-01" };
-        private readonly static Dictionary<string, string> ApiVersionMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            { "AnalysisServices/servers", "2016-05-16" },
-            { "Logic/workflows", "2016-06-01" },
-        };
+        private const string BaseApiVersion = "2017-05-10";
+
+        private readonly static string[] PropsKeyFilters = new[] { "dns", "url", "uri", "link", "host", "path", "cidr", "dns", "fqdn", "address", "server", "gateway", "endpoint", "consortium", "connection"  };
+        private readonly static string[] PropsValueFilters = new[] { "://", ".com", ".net", ".io" };
 
         private static HttpClient Client = new HttpClient();
-
-        private static string TenantId => ConfigurationManager.AppSettings[nameof(TenantId)];
 
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
         static void Main(string[] args)
@@ -43,7 +39,7 @@
                 outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
-                    ColorConsole.WriteLine($"{outputFile} already exists! Overwrite it? (Y/N)".Yellow());
+                    ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
                     var input = Console.ReadKey();
                     if (input.Key != ConsoleKey.Y)
                     {
@@ -62,13 +58,8 @@
                     return result;
                 }))
                 {
-                    // if (!File.Exists(arg.value))
-                    // {
-                    //     Console.WriteLine($"File not found: {arg.value}");
-                    //     continue;
-                    // }
-
-                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={ApiVersions[2]}";
+                    ColorConsole.WriteLine($"\nTenant: {arg.tenant} / Subscription: {arg.sub} / ResourceGroup: {arg.rg}".Black().OnWhite());
+                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
                     var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
                     if (azRes == null)
                     {
@@ -80,6 +71,7 @@
                     var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
                     WriteToTarget(azRes.Select(x =>
                     {
+                        ColorConsole.WriteLine("------------------------------");
                         ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
                         var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
                         var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
@@ -191,7 +183,6 @@
             finally
             {
                 ColorConsole.WriteLine(result);
-                ColorConsole.WriteLine("------------------------------");
             }
 
             return result;
@@ -212,19 +203,9 @@
                     var dict = FlattenJson(obj);
                     if (dict?.Count > 0)
                     {
-                        //var props = obj.SelectTokens("..properties");
-                        //if (props.Count() > 1)
-                        //{
-                        //    foreach (var prop in props)
-                        //    {
-                        //        result += "-----" + Environment.NewLine + string.Join(Environment.NewLine, prop.Select(x => $"{x.Path.Replace("properties.", string.Empty)}: {x.First.ToString()}"));
-                        //    }
-                        //}
-                        //else
-                        //{
-                        //    result = string.Join(Environment.NewLine, props.FirstOrDefault().Select(x => $"{x.Path.Replace("properties.", string.Empty)}: {x.First.ToString()}"));
-                        //}
-                        result = string.Join(Environment.NewLine, dict.Where(x => x.Key.Contains("properties.")).Select(x => $"{x.Key.Replace("properties.", string.Empty)}: {x.Value}"));
+                        result = string.Join(Environment.NewLine, dict
+                            .Where(x => x.Key.Contains("properties.") && (PropsKeyFilters.Any(y => x.Key.IndexOf(y, StringComparison.OrdinalIgnoreCase) >= 0) || PropsValueFilters.Any(y => x.Value.Split('.').Contains(y))))
+                            .Select(x => $"{x.Key.Replace("properties.", string.Empty)}: {x.Value}"));
                     }
                     else
                     {
@@ -240,7 +221,6 @@
             finally
             {
                 ColorConsole.WriteLine(result);
-                ColorConsole.WriteLine("------------------------------");
             }
 
             return result;
@@ -290,7 +270,6 @@
             finally
             {
                 ColorConsole.WriteLine(result);
-                ColorConsole.WriteLine("------------------------------");
             }
 
             return result;
