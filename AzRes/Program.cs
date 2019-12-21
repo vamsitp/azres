@@ -87,10 +87,10 @@
                             SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
                             ID = ids[2],
                             NAME = x.name,
-                            KIND = x.kind,
                             LOCATION = x.location,
                             PROPS = props,
                             DIAG_INFO = diag,
+                            KIND = x.kind,
                             MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
                             SKU_NAME = x.sku?.name,
                             SKU_TIER = x.sku?.tier,
@@ -305,8 +305,8 @@
                 title.Style.Font.Bold = true;
                 //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
                 ws.Column(ws.Cells.Columns).Style.WrapText = true;
-                ws.View.FreezePanes(3, 4);
-                ws.Cells.AutoFitColumns(25);
+                ws.View.FreezePanes(3, 5);
+                ws.Cells.AutoFitColumns(10, 25);
                 pkg.Save();
             }
         }
