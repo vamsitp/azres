@@ -10,6 +10,8 @@
 
     using ColoredConsole;
 
+    using Humanizer;
+
     using Newtonsoft.Json;
     using Newtonsoft.Json.Linq;
 
@@ -206,7 +208,7 @@
                     if (dict?.Count > 0)
                     {
                         result = string.Join(Environment.NewLine, dict
-                            .Where(x => x.Key.Contains("properties.") && (PropsKeyFilters.Any(y => x.Key.IndexOf(y, StringComparison.OrdinalIgnoreCase) >= 0) || PropsValueFilters.Any(y => x.Value.Contains(".") && x.Value.Split('.').Contains(y))))
+                            .Where(Predicate)
                             .Select(x => $"{x.Key.Replace("properties.", string.Empty)}: {x.Value}"));
                     }
                     else
@@ -227,6 +229,13 @@
 
             return result;
 
+            bool Predicate(KeyValuePair<string, string> x)
+            {
+                var isProp = x.Key.Contains("properties.");
+                var isFilter = PropsKeyFilters.Any(y => x.Key.Humanize().Split(' ').Contains(y, StringComparer.OrdinalIgnoreCase)) || PropsValueFilters.Any(y => x.Value.Contains(".") && x.Value.Split('.').Contains(y, StringComparer.OrdinalIgnoreCase));
+                var match = isProp && isFilter;
+                return match;
+            }
         }
 
         private static async Task<string> GetDiagnosticSettings(string resource, string apiVersion)
