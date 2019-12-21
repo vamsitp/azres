@@ -58,6 +58,7 @@
                     return result;
                 }))
                 {
+                    ColorConsole.WriteLine("------------------------------");
                     ColorConsole.WriteLine($"\nTenant: {arg.tenant}\nSubscription: {arg.sub}\nResourceGroup: {arg.rg}".Black().OnWhite());
                     var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
                     var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
