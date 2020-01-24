@@ -3,6 +3,7 @@
     using System;
     using System.Collections.Generic;
     using System.Diagnostics;
+    using System.Drawing;
     using System.IO;
     using System.Linq;
     using System.Net.Http;
@@ -16,6 +17,8 @@
     using Newtonsoft.Json.Linq;
 
     using OfficeOpenXml;
+    using OfficeOpenXml.Drawing.Chart;
+    using OfficeOpenXml.Table.PivotTable;
 
     class Program
     {
@@ -73,7 +76,7 @@
 
                     var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
                     var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
-                    WriteToTarget(azRes.Select(x =>
+                    var items = azRes.Select(x =>
                     {
                         ColorConsole.WriteLine("------------------------------");
                         ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
@@ -103,7 +106,10 @@
                             IDENTITY = x.identity?.type,
                         };
                         return result;
-                    }), arg.i + 1, header, outputFile);
+                    });
+
+                    var max = items.GroupBy(i => i.COMPONENT).Max(x => x.Count());
+                    WriteToTarget(items, arg.i + 1, header, outputFile, max);
                 }
 
                 ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
@@ -286,10 +292,10 @@
             return result;
         }
 
-        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, string outputFile)
+        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, string outputFile, int max)
         {
             var sheetName = $"{index}. {header.Split(Slash).LastOrDefault()}".Substring(0, 31);
-            using (var pkg = new ExcelPackage(new FileInfo(outputFile)))
+            using (var pkg = new ExcelPackage(new FileInfo(outputFile), false))
             {
                 var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(sheetName));
                 if (ws != null)
@@ -307,7 +313,7 @@
                 ws.Cells.Style.Font.Size = 10;
                 ws.Cells.Style.VerticalAlignment = OfficeOpenXml.Style.ExcelVerticalAlignment.Top;
                 ws.Cells.Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Left;
-                ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
+                var range = ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
                 ws.InsertRow(1, 1);
                 var title = ws.Cells[1, 1];
                 title.Value = header.ToUpperInvariant();
@@ -316,6 +322,42 @@
                 ws.Column(ws.Cells.Columns).Style.WrapText = true;
                 ws.View.FreezePanes(3, 5);
                 ws.Cells.AutoFitColumns(10, 25);
+
+                var rowCount = ws.Dimension.End.Row;
+                var colCount = ws.Dimension.End.Column;
+
+                var pivotTable = ws.PivotTables.Add(ws.Cells[$"A{rowCount + 2}"], ws.Cells[2, 1, rowCount, colCount], $"PivotTable_{sheetName}");
+                pivotTable.TableStyle = OfficeOpenXml.Table.TableStyles.Medium13;
+                var rowField = pivotTable.RowFields.Add(pivotTable.Fields[0]);
+                //pivotTable.ColumnFields.Add(pivotTable.Fields[1]);
+                //pivotTable.ColumnFields.Add(pivotTable.Fields[2]);
+                var dataField = pivotTable.DataFields.Add(pivotTable.Fields[0]);
+                dataField.Function = DataFieldFunctions.Count;
+                // pivotTable.DataOnRows = false;
+
+                var chart = (ExcelBarChart)ws.Drawings.AddChart($"PivotChart_{sheetName}", eChartType.BarStacked, pivotTable);
+                //chart.XAxis.DisplayUnit = 1;
+                //chart.XAxis.MajorUnit = 1;
+                //chart.XAxis.MaxValue = max;
+                // chart.Style = eChartStyle.Style8;
+                chart.RoundedCorners = false;
+                chart.DataLabel.Font.Color = Color.White;
+                chart.DataLabel.ShowValue = true;
+                chart.SetPosition(rowCount + 1, 0, 2, 0);
+                chart.SetSize(480, 480);
+
+                //var chart = ws.Drawings.AddChart("Components", eChartType.BarStacked) as ExcelBarChart;
+                //chart.Title.Text = "Components";
+
+                ////select the ranges for the chart. First the values, then the header range
+                //chart.Series.Add(ExcelRange.GetAddress(2, 1, rowCount, 3), ExcelRange.GetAddress(2, 1, 2, 3));
+                //chart.Legend.Position = eLegendPosition.Bottom;
+                //chart.DataLabel.ShowValue = true;
+                //chart.DataLabel.ShowCategory = true;
+                //chart.DataLabel.ShowLeaderLines = true;
+                //chart.SetSize(480, 480);
+                //chart.SetPosition(rowCount + 1, 0, 2, 0);
+
                 pkg.Save();
             }
         }
