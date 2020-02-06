@@ -30,7 +30,7 @@
         private const string BaseApiVersion = "2017-05-10";
         private const string DefaultApiVersion = "2019-08-01";
 
-        private readonly static string[] PropsKeyFilters = new[] { "dns", "url", "uri", "link", "host", "path", "cidr", "dns", "fqdn", "address", "server", "gateway", "endpoint", "consortium", "connection"  };
+        private readonly static string[] PropsKeyFilters = new[] { "dns", "url", "uri", "link", "host", "path", "cidr", "dns", "fqdn", "address", "server", "gateway", "endpoint", "consortium", "connection" };
         private readonly static string[] PropsValueFilters = new[] { "://", ".com", ".net", ".io" };
 
         private static HttpClient Client = new HttpClient();
@@ -41,7 +41,7 @@
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? "./" : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? string.Empty : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
                 if (File.Exists(outputFile))
                 {
                     ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
@@ -56,60 +56,65 @@
                     }
                 }
 
-                foreach (var arg in args.Select((value, i) =>
+                var file = new FileInfo(Path.Combine(AppContext.BaseDirectory, outputFile));
+                using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
                 {
-                    var val = value.Split('/');
-                    var result = new { i, tenant = val[0], sub = val[1], rg = val[2] };
-                    return result;
-                }))
-                {
-                    ColorConsole.WriteLine("------------------------------");
-                    ColorConsole.WriteLine($"\nTenant: {arg.tenant}\nSubscription: {arg.sub}\nResourceGroup: {arg.rg}".Black().OnWhite());
-                    var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
-                    var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
-                    if (azRes == null)
+                    foreach (var arg in args.Select((value, i) =>
                     {
-                        ColorConsole.WriteLine("\nPress any key to quit...");
-                        Console.ReadKey();
-                        return;
-                    }
-
-                    var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
-                    var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
-                    var items = azRes.Select(x =>
+                        var val = value.Split('/');
+                        var result = new { i, tenant = val[0], sub = val[1], rg = val[2] };
+                        return result;
+                    }))
                     {
                         ColorConsole.WriteLine("------------------------------");
-                        ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
-                        var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
-                        var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
-                        var diag = GetDiagnosticSettings(x.id, diagApiVersion).GetAwaiter().GetResult();
-                        var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
-                        var type = x.type?.Split(new[] { Slash }, 3);
-                        var result = new
+                        ColorConsole.WriteLine($"\nTenant: {arg.tenant}\nSubscription: {arg.sub}\nResourceGroup: {arg.rg}".Black().OnWhite());
+                        var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
+                        var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
+                        if (azRes == null)
                         {
-                            COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty).Replace($"{nameof(Microsoft).ToUpperInvariant()}.", string.Empty).Replace($"{nameof(Microsoft).ToLowerInvariant()}.", string.Empty), // ids[0]
-                            MODULE = type[1], // ids[1]
-                            SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
-                            ID = ids[2],
-                            NAME = x.name,
-                            LOCATION = x.location,
-                            PROPS = props,
-                            DIAG_INFO = diag,
-                            KIND = x.kind,
-                            MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
-                            SKU_NAME = x.sku?.name,
-                            SKU_TIER = x.sku?.tier,
-                            SKU_CAPACITY = x.sku?.capacity,
-                            SKU_SIZE = x.sku?.size,
-                            SKU_FAMILY = x.sku?.family,
-                            TAGS = x.tags?.tier,
-                            IDENTITY = x.identity?.type,
-                        };
-                        return result;
-                    });
+                            ColorConsole.WriteLine("\nPress any key to quit...");
+                            Console.ReadKey();
+                            return;
+                        }
 
-                    var max = items.GroupBy(i => i.COMPONENT).Max(x => x.Count());
-                    WriteToTarget(items, arg.i + 1, header, outputFile, max);
+                        var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
+                        var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
+                        var items = azRes.Take(1).Select(x =>
+                        {
+                            ColorConsole.WriteLine("------------------------------");
+                            ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
+                            var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
+                            var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
+                            var diag = GetDiagnosticSettings(x.id, diagApiVersion).GetAwaiter().GetResult();
+                            var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
+                            var type = x.type?.Split(new[] { Slash }, 3);
+                            var result = new
+                            {
+                                COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty).Replace($"{nameof(Microsoft).ToUpperInvariant()}.", string.Empty).Replace($"{nameof(Microsoft).ToLowerInvariant()}.", string.Empty), // ids[0]
+                                MODULE = type[1], // ids[1]
+                                SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
+                                ID = ids[2],
+                                NAME = x.name,
+                                LOCATION = x.location,
+                                PROPS = props,
+                                DIAG_INFO = diag,
+                                KIND = x.kind,
+                                MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
+                                SKU_NAME = x.sku?.name,
+                                SKU_TIER = x.sku?.tier,
+                                SKU_CAPACITY = x.sku?.capacity,
+                                SKU_SIZE = x.sku?.size,
+                                SKU_FAMILY = x.sku?.family,
+                                TAGS = x.tags?.tier,
+                                IDENTITY = x.identity?.type,
+                            };
+                            return result;
+                        });
+
+                        var groups = items.GroupBy(i => i.COMPONENT);
+                        var max = groups.Max(x => x.Count());
+                        WriteToTarget(items, arg.i + 1, header, pkg, groups.Count(), max);
+                    }
                 }
 
                 ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
@@ -292,74 +297,76 @@
             return result;
         }
 
-        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, string outputFile, int max)
+        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, ExcelPackage pkg, int noOfGroups, int maxGroupCount)
         {
-            var sheetName = $"{index}. {header.Split(Slash).LastOrDefault()}".Substring(0, 31);
-            using (var pkg = new ExcelPackage(new FileInfo(outputFile), false))
+            var sheetName = $"{index}. {header.Split(Slash).LastOrDefault()}";
+            if (sheetName.Length > 32)
             {
-                var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(sheetName));
-                if (ws != null)
-                {
-                    ColorConsole.WriteLine($"Deleting and recreating existing Sheet: {sheetName}".Yellow());
-                    pkg.Workbook.Worksheets.Delete(ws);
-                }
-                else
-                {
-                    ColorConsole.WriteLine($"Creating Sheet: {sheetName}");
-                }
-
-                ws = pkg.Workbook.Worksheets.Add(sheetName);
-                ws.Cells.Style.Font.Name = "Segoe UI";
-                ws.Cells.Style.Font.Size = 10;
-                ws.Cells.Style.VerticalAlignment = OfficeOpenXml.Style.ExcelVerticalAlignment.Top;
-                ws.Cells.Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Left;
-                var range = ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
-                ws.InsertRow(1, 1);
-                var title = ws.Cells[1, 1];
-                title.Value = header.ToUpperInvariant();
-                title.Style.Font.Bold = true;
-                //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
-                ws.Column(ws.Cells.Columns).Style.WrapText = true;
-                ws.View.FreezePanes(3, 5);
-                ws.Cells.AutoFitColumns(10, 25);
-
-                var rowCount = ws.Dimension.End.Row;
-                var colCount = ws.Dimension.End.Column;
-
-                var pivotTable = ws.PivotTables.Add(ws.Cells[$"A{rowCount + 2}"], ws.Cells[2, 1, rowCount, colCount], $"PivotTable_{sheetName}");
-                pivotTable.TableStyle = OfficeOpenXml.Table.TableStyles.Medium13;
-                var rowField = pivotTable.RowFields.Add(pivotTable.Fields[0]);
-                //pivotTable.ColumnFields.Add(pivotTable.Fields[1]);
-                //pivotTable.ColumnFields.Add(pivotTable.Fields[2]);
-                var dataField = pivotTable.DataFields.Add(pivotTable.Fields[0]);
-                dataField.Function = DataFieldFunctions.Count;
-                // pivotTable.DataOnRows = false;
-
-                var chart = (ExcelBarChart)ws.Drawings.AddChart($"PivotChart_{sheetName}", eChartType.BarStacked, pivotTable);
-                //chart.XAxis.DisplayUnit = 1;
-                //chart.XAxis.MajorUnit = 1;
-                //chart.XAxis.MaxValue = max;
-                // chart.Style = eChartStyle.Style8;
-                chart.RoundedCorners = false;
-                chart.DataLabel.Font.Color = Color.White;
-                chart.DataLabel.ShowValue = true;
-                chart.SetPosition(rowCount + 1, 0, 2, 0);
-                chart.SetSize(480, 480);
-
-                //var chart = ws.Drawings.AddChart("Components", eChartType.BarStacked) as ExcelBarChart;
-                //chart.Title.Text = "Components";
-
-                ////select the ranges for the chart. First the values, then the header range
-                //chart.Series.Add(ExcelRange.GetAddress(2, 1, rowCount, 3), ExcelRange.GetAddress(2, 1, 2, 3));
-                //chart.Legend.Position = eLegendPosition.Bottom;
-                //chart.DataLabel.ShowValue = true;
-                //chart.DataLabel.ShowCategory = true;
-                //chart.DataLabel.ShowLeaderLines = true;
-                //chart.SetSize(480, 480);
-                //chart.SetPosition(rowCount + 1, 0, 2, 0);
-
-                pkg.Save();
+                sheetName = sheetName.Substring(0, 31);
             }
+
+            var ws = pkg.Workbook.Worksheets.SingleOrDefault(x => x.Name.Equals(sheetName));
+            if (ws != null)
+            {
+                ColorConsole.WriteLine($"Deleting and recreating existing Sheet: {sheetName}".Yellow());
+                pkg.Workbook.Worksheets.Delete(ws);
+            }
+            else
+            {
+                ColorConsole.WriteLine($"Creating Sheet: {sheetName}");
+            }
+
+            ws = pkg.Workbook.Worksheets.Add(sheetName);
+            ws.Cells.Style.Font.Name = "Segoe UI";
+            ws.Cells.Style.Font.Size = 10;
+            ws.Cells.Style.VerticalAlignment = OfficeOpenXml.Style.ExcelVerticalAlignment.Top;
+            ws.Cells.Style.HorizontalAlignment = OfficeOpenXml.Style.ExcelHorizontalAlignment.Left;
+            var range = ws.Cells.LoadFromCollection(records, true, OfficeOpenXml.Table.TableStyles.Light13);
+            ws.InsertRow(1, 1);
+            var title = ws.Cells[1, 1];
+            title.Value = header.ToUpperInvariant();
+            title.Style.Font.Bold = true;
+            //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
+            ws.Column(ws.Cells.Columns).Style.WrapText = true;
+            ws.View.FreezePanes(3, 5);
+            ws.Cells.AutoFitColumns(10, 25);
+
+            var rowCount = ws.Dimension.End.Row;
+            var colCount = ws.Dimension.End.Column;
+
+            var pivotTable = ws.PivotTables.Add(ws.Cells[$"A{rowCount + 2}"], ws.Cells[2, 1, rowCount, colCount], $"PivotTable_{sheetName}");
+            pivotTable.TableStyle = OfficeOpenXml.Table.TableStyles.Medium13;
+            var rowField = pivotTable.RowFields.Add(pivotTable.Fields[0]);
+            //pivotTable.ColumnFields.Add(pivotTable.Fields[1]);
+            //pivotTable.ColumnFields.Add(pivotTable.Fields[2]);
+            var dataField = pivotTable.DataFields.Add(pivotTable.Fields[0]);
+            dataField.Function = DataFieldFunctions.Count;
+            // pivotTable.DataOnRows = false;
+
+            var chart = (ExcelBarChart)ws.Drawings.AddChart($"PivotChart_{sheetName}", eChartType.BarStacked, pivotTable);
+            //chart.XAxis.DisplayUnit = 1;
+            //chart.XAxis.MajorUnit = 1;
+            //chart.XAxis.MaxValue = maxGroupCount;
+            // chart.Style = eChartStyle.Style8;
+            chart.RoundedCorners = false;
+            chart.DataLabel.Font.Color = Color.White;
+            chart.DataLabel.ShowValue = true;
+            chart.SetPosition(rowCount + 1, 0, 2, 0);
+            chart.SetSize(480, 40 * noOfGroups);
+
+            //var chart = ws.Drawings.AddChart("Components", eChartType.BarStacked) as ExcelBarChart;
+            //chart.Title.Text = "Components";
+
+            ////select the ranges for the chart. First the values, then the header range
+            //chart.Series.Add(ExcelRange.GetAddress(2, 1, rowCount, 3), ExcelRange.GetAddress(2, 1, 2, 3));
+            //chart.Legend.Position = eLegendPosition.Bottom;
+            //chart.DataLabel.ShowValue = true;
+            //chart.DataLabel.ShowCategory = true;
+            //chart.DataLabel.ShowLeaderLines = true;
+            //chart.SetSize(480, 480);
+            //chart.SetPosition(rowCount + 1, 0, 2, 0);
+
+            pkg.Save();
         }
 
         // Credit: https://stackoverflow.com/a/35838986
