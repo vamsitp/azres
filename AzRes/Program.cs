@@ -42,7 +42,8 @@
             if (args?.Length > 0)
             {
                 outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? string.Empty : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
-                if (File.Exists(outputFile))
+                var file = new FileInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), outputFile));
+                if (file.Exists)
                 {
                     ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
                     var input = Console.ReadKey();
@@ -56,7 +57,6 @@
                     }
                 }
 
-                var file = new FileInfo(Path.Combine(AppContext.BaseDirectory, outputFile));
                 using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
                 {
                     foreach (var arg in args.Select((value, i) =>
@@ -79,7 +79,7 @@
 
                         var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
                         var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
-                        var items = azRes.Take(1).Select(x =>
+                        var items = azRes.Select(x =>
                         {
                             ColorConsole.WriteLine("------------------------------");
                             ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
@@ -300,7 +300,7 @@
         private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, ExcelPackage pkg, int noOfGroups, int maxGroupCount)
         {
             var sheetName = $"{index}. {header.Split(Slash).LastOrDefault()}";
-            if (sheetName.Length > 32)
+            if (sheetName.Length > 31)
             {
                 sheetName = sheetName.Substring(0, 31);
             }
