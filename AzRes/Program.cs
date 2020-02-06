@@ -41,8 +41,8 @@
             var outputFile = string.Empty;
             if (args?.Length > 0)
             {
-                outputFile = Path.Combine(!args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? string.Empty : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
-                var file = new FileInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), outputFile));
+                outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), !args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? string.Empty : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
+                var file = new FileInfo(outputFile);
                 if (file.Exists)
                 {
                     ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
@@ -59,6 +59,7 @@
 
                 using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
                 {
+                    var distinctItems = new List<DistinctResource>();
                     foreach (var arg in args.Select((value, i) =>
                     {
                         var val = value.Split('/');
@@ -113,8 +114,12 @@
 
                         var groups = items.GroupBy(i => i.COMPONENT);
                         var max = groups.Max(x => x.Count());
+                        var distinct = items.Select(i => new DistinctResource { COMPONENT = i.COMPONENT, MODULE = i.MODULE, SUB_MODULE = i.SUB_MODULE }).Distinct();
+                        distinctItems.AddRange(distinct);
                         WriteToTarget(items, arg.i + 1, header, pkg, groups.Count(), max);
                     }
+
+                    WriteToTarget(distinctItems.Distinct(), -1, "Distinct_Resources", pkg);
                 }
 
                 ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
@@ -127,7 +132,7 @@
             var key = Console.ReadKey();
             if (File.Exists(outputFile) && key.Key == ConsoleKey.O)
             {
-                Process.Start(new ProcessStartInfo(Path.Combine(Environment.CurrentDirectory, outputFile)) { UseShellExecute = true });
+                Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
             }
         }
 
@@ -297,9 +302,9 @@
             return result;
         }
 
-        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, ExcelPackage pkg, int noOfGroups, int maxGroupCount)
+        private static void WriteToTarget<T>(IEnumerable<T> records, int index, string header, ExcelPackage pkg, int noOfGroups = 0, int maxGroupCount = 0)
         {
-            var sheetName = $"{index}. {header.Split(Slash).LastOrDefault()}";
+            var sheetName = index > 0 ? $"{index}. {header.Split(Slash).LastOrDefault()}" : $"{header.Split(Slash).LastOrDefault()}";
             if (sheetName.Length > 31)
             {
                 sheetName = sheetName.Substring(0, 31);
@@ -328,43 +333,38 @@
             title.Style.Font.Bold = true;
             //// title.Style.Font.Color.SetColor(System.Drawing.Color.FromArgb(255, 91, 155, 213));
             ws.Column(ws.Cells.Columns).Style.WrapText = true;
-            ws.View.FreezePanes(3, 5);
+            ws.View.FreezePanes(3, noOfGroups > 0 ? 5 : 4);
             ws.Cells.AutoFitColumns(10, 25);
 
-            var rowCount = ws.Dimension.End.Row;
-            var colCount = ws.Dimension.End.Column;
+            if (noOfGroups == 0)
+            {
+                pkg.Workbook.Worksheets.MoveToStart(sheetName);
+            }
+            else
+            {
+                var rowCount = ws.Dimension.End.Row;
+                var colCount = ws.Dimension.End.Column;
 
-            var pivotTable = ws.PivotTables.Add(ws.Cells[$"A{rowCount + 2}"], ws.Cells[2, 1, rowCount, colCount], $"PivotTable_{sheetName}");
-            pivotTable.TableStyle = OfficeOpenXml.Table.TableStyles.Medium13;
-            var rowField = pivotTable.RowFields.Add(pivotTable.Fields[0]);
-            //pivotTable.ColumnFields.Add(pivotTable.Fields[1]);
-            //pivotTable.ColumnFields.Add(pivotTable.Fields[2]);
-            var dataField = pivotTable.DataFields.Add(pivotTable.Fields[0]);
-            dataField.Function = DataFieldFunctions.Count;
-            // pivotTable.DataOnRows = false;
+                var pivotTable = ws.PivotTables.Add(ws.Cells[$"A{rowCount + 2}"], ws.Cells[2, 1, rowCount, colCount], $"PivotTable_{sheetName}");
+                pivotTable.TableStyle = OfficeOpenXml.Table.TableStyles.Medium13;
+                var rowField = pivotTable.RowFields.Add(pivotTable.Fields[0]);
+                //pivotTable.ColumnFields.Add(pivotTable.Fields[1]);
+                //pivotTable.ColumnFields.Add(pivotTable.Fields[2]);
+                var dataField = pivotTable.DataFields.Add(pivotTable.Fields[0]);
+                dataField.Function = DataFieldFunctions.Count;
+                // pivotTable.DataOnRows = false;
 
-            var chart = (ExcelBarChart)ws.Drawings.AddChart($"PivotChart_{sheetName}", eChartType.BarStacked, pivotTable);
-            //chart.XAxis.DisplayUnit = 1;
-            //chart.XAxis.MajorUnit = 1;
-            //chart.XAxis.MaxValue = maxGroupCount;
-            // chart.Style = eChartStyle.Style8;
-            chart.RoundedCorners = false;
-            chart.DataLabel.Font.Color = Color.White;
-            chart.DataLabel.ShowValue = true;
-            chart.SetPosition(rowCount + 1, 0, 2, 0);
-            chart.SetSize(480, 40 * noOfGroups);
-
-            //var chart = ws.Drawings.AddChart("Components", eChartType.BarStacked) as ExcelBarChart;
-            //chart.Title.Text = "Components";
-
-            ////select the ranges for the chart. First the values, then the header range
-            //chart.Series.Add(ExcelRange.GetAddress(2, 1, rowCount, 3), ExcelRange.GetAddress(2, 1, 2, 3));
-            //chart.Legend.Position = eLegendPosition.Bottom;
-            //chart.DataLabel.ShowValue = true;
-            //chart.DataLabel.ShowCategory = true;
-            //chart.DataLabel.ShowLeaderLines = true;
-            //chart.SetSize(480, 480);
-            //chart.SetPosition(rowCount + 1, 0, 2, 0);
+                var chart = (ExcelBarChart)ws.Drawings.AddChart($"PivotChart_{sheetName}", eChartType.BarStacked, pivotTable);
+                //chart.XAxis.DisplayUnit = 1;
+                //chart.XAxis.MajorUnit = 1;
+                //chart.XAxis.MaxValue = maxGroupCount;
+                // chart.Style = eChartStyle.Style8;
+                chart.RoundedCorners = false;
+                chart.DataLabel.Font.Color = Color.White;
+                chart.DataLabel.ShowValue = true;
+                chart.SetPosition(rowCount + 1, 0, 2, 0);
+                chart.SetSize(480, 40 * noOfGroups);
+            }
 
             pkg.Save();
         }
@@ -380,6 +380,31 @@
             });
 
             return results;
+        }
+    }
+
+    // Credit: https://github.com/JanKallman/EPPlus/issues/8
+    class DistinctResource
+    {
+        public string COMPONENT { get; set; }
+        public string MODULE { get; set; }
+        public string SUB_MODULE { get; set; }
+
+        public override bool Equals(object obj)
+        {
+            return obj is DistinctResource resource &&
+                   this.COMPONENT.Equals(resource.COMPONENT, StringComparison.OrdinalIgnoreCase) &&
+                   this.MODULE.Equals(resource.MODULE, StringComparison.OrdinalIgnoreCase) &&
+                   this.SUB_MODULE.Equals(resource.SUB_MODULE, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public override int GetHashCode()
+        {
+            var hashCode = -1522090145;
+            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.COMPONENT);
+            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.MODULE);
+            hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.SUB_MODULE);
+            return hashCode;
         }
     }
 }
