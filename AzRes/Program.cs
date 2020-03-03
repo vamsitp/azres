@@ -27,7 +27,8 @@
         private const char Slash = '/';
         private const string AuthHeader = "Authorization";
         private const string Bearer = "Bearer ";
-        private const string BaseApiVersion = "2017-05-10";
+        private const string BaseApiVersion = "2014-04-01";
+        private const string ResourcesApiVersion = "2017-05-10";
         private const string DefaultApiVersion = "2019-08-01";
 
         private readonly static string[] PropsKeyFilters = new[] { "dns", "url", "uri", "link", "host", "path", "cidr", "dns", "fqdn", "address", "server", "gateway", "endpoint", "consortium", "connection" };
@@ -35,108 +36,201 @@
 
         private static HttpClient Client = new HttpClient();
 
+        private const string SubUrl = "https://management.azure.com/subscriptions?api-version=" + BaseApiVersion;
+        private const string RgUrl = "https://management.azure.com/subscriptions/{0}/resourceGroups?api-version=" + BaseApiVersion;
+
+        private static string tenant = string.Empty;
+        private static Dictionary<string, List<(int index, string name, string id, string state)>> subs = new Dictionary<string, List<(int index, string name, string id, string state)>>();
+        private static Dictionary<string, List<(int index, string name, string id, string location)>> rgs = new Dictionary<string, List<(int index, string name, string id, string location)>>();
+
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
-            var outputFile = string.Empty;
-            if (args?.Length > 0)
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            PrintHelp();
+            do
             {
-                outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), !args[0].EndsWith(".json", StringComparison.OrdinalIgnoreCase) ? string.Empty : Path.GetDirectoryName(args[0]), $"{nameof(AzResources)} - {string.Join("_", args.Select(x => x.StartsWith("https:", StringComparison.OrdinalIgnoreCase) ? DateTime.Now.ToString("ddMMMyy") : Path.GetFileNameWithoutExtension(x)))}.xlsx");
-                var file = new FileInfo(outputFile);
-                if (file.Exists)
+                ColorConsole.Write("\n> ".Green());
+                var key = Console.ReadLine()?.Trim();
+
+                if (key.Equals("q", StringComparison.OrdinalIgnoreCase) || key.StartsWith("quit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("exit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("close", StringComparison.OrdinalIgnoreCase))
                 {
-                    ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
-                    var input = Console.ReadKey();
-                    if (input.Key != ConsoleKey.Y)
-                    {
-                        return;
-                    }
-                    else
-                    {
-                        Console.WriteLine("\n");
-                    }
+                    ColorConsole.WriteLine("DONE!".White().OnDarkGreen());
+                    break;
+                }
+                else if (key.Equals("?") || key.StartsWith("help", StringComparison.OrdinalIgnoreCase))
+                {
+                    PrintHelp();
+                }
+                else if (key.Equals("c", StringComparison.OrdinalIgnoreCase) || key.StartsWith("cls", StringComparison.OrdinalIgnoreCase) || key.StartsWith("clear", StringComparison.OrdinalIgnoreCase))
+                {
+                    Console.Clear();
+                }
+                else
+                {
+                    ColorConsole.Write("> ".Green(), "Azure AD Tenant ID (hit ", "enter".Green(), " to use the ", "common".Green(), $" tenant): {tenant}");
+                    tenant = Console.ReadLine();
+                    await HandleTenant(tenant);
+                }
+            }
+            while (true);
+        }
+
+        private static async Task HandleTenant(string tenant)
+        {
+            if (subs.Count == 0)
+            {
+                var sbJson = await GetJson<dynamic>(SubUrl, tenant);
+                var sbList = new List<(int index, string name, string id, string state)>();
+                foreach (var s in (sbJson?.value as JArray).Select((item, i) => new { index = i + 1, item}))
+                {
+                    sbList.Add((s.index, s.item.SelectToken(".displayName").Value<string>(), s.item.SelectToken(".subscriptionId").Value<string>(), s.item.SelectToken(".state").Value<string>()));
                 }
 
-                using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
+                subs.Add(tenant, sbList);
+            }
+
+            ColorConsole.WriteLine("\nSubscriptions:");
+            foreach (var s in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
+            {
+                ColorConsole.WriteLine($"{s.index}.".PadLeft(5).Green(), $" {s.name} - {s.id} ({s.state})");
+            }
+
+            ColorConsole.Write("\n> ".Green(), "Subscription ID (hit ", "enter".Green(), " to fetch all the available Subscriptions): ");
+            var subInput = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(subInput))
+            {
+                foreach (var sub in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
                 {
-                    var distinctItems = new List<DistinctResource>();
-                    foreach (var arg in args.Select((value, i) =>
-                    {
-                        var val = value.Split('/');
-                        var result = new { i, tenant = val[0], sub = val[1], rg = val[2] };
-                        return result;
-                    }))
-                    {
-                        ColorConsole.WriteLine("------------------------------");
-                        ColorConsole.WriteLine($"\nTenant: {arg.tenant}\nSubscription: {arg.sub}\nResourceGroup: {arg.rg}".Black().OnWhite());
-                        var url = $"https://management.azure.com/subscriptions/{arg.sub}/resourceGroups/{arg.rg}/resources?api-version={BaseApiVersion}";
-                        var azRes = GetJson(url, arg.tenant).GetAwaiter().GetResult()?.value?.OrderBy(x => x.id);
-                        if (azRes == null)
-                        {
-                            ColorConsole.WriteLine("\nPress any key to quit...");
-                            Console.ReadKey();
-                            return;
-                        }
-
-                        var diagApiVersion = GetApiVersion("microsoft.insights/diagnosticSettings", arg.sub).GetAwaiter().GetResult();
-                        var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
-                        var items = azRes.Select(x =>
-                        {
-                            ColorConsole.WriteLine("------------------------------");
-                            ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
-                            var apiVersion = GetApiVersion(x.type, arg.sub).GetAwaiter().GetResult();
-                            var props = GetProperties(x.id, apiVersion).GetAwaiter().GetResult();
-                            var diag = GetDiagnosticSettings(x.id, diagApiVersion).GetAwaiter().GetResult();
-                            var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
-                            var type = x.type?.Split(new[] { Slash }, 3);
-                            var result = new
-                            {
-                                COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty).Replace($"{nameof(Microsoft).ToUpperInvariant()}.", string.Empty).Replace($"{nameof(Microsoft).ToLowerInvariant()}.", string.Empty), // ids[0]
-                                MODULE = type[1], // ids[1]
-                                SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
-                                ID = ids[2],
-                                NAME = x.name,
-                                LOCATION = x.location,
-                                PROPS = props,
-                                DIAG_INFO = diag,
-                                KIND = x.kind,
-                                MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
-                                SKU_NAME = x.sku?.name,
-                                SKU_TIER = x.sku?.tier,
-                                SKU_CAPACITY = x.sku?.capacity,
-                                SKU_SIZE = x.sku?.size,
-                                SKU_FAMILY = x.sku?.family,
-                                TAGS = x.tags?.tier,
-                                IDENTITY = x.identity?.type,
-                            };
-                            return result;
-                        });
-
-                        var groups = items.GroupBy(i => i.COMPONENT);
-                        var max = groups.Max(x => x.Count());
-                        var distinct = items.Select(i => new DistinctResource { COMPONENT = i.COMPONENT, MODULE = i.MODULE, SUB_MODULE = i.SUB_MODULE }).Distinct();
-                        distinctItems.AddRange(distinct);
-                        WriteToTarget(items, arg.i + 1, header, pkg, groups.Count(), max);
-                    }
-
-                    WriteToTarget(distinctItems.Distinct(), -1, "Distinct_Resources", pkg);
+                    await HandleSubscription(tenant, sub);
                 }
-
-                ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
             }
             else
             {
-                ColorConsole.WriteLine("Save the JSON from the below link and provide the file-path as input.\nhttps://resources.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources".Yellow());
+                var sub = subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value.SingleOrDefault(s => s.index.ToString().Equals(subInput) || s.name.Equals(subInput) || s.id.Equals(subInput));
+                await HandleSubscription(tenant, sub);
+            }
+        }
+
+        private static async Task HandleSubscription(string tenant, (int index, string name, string id, string state) sub)
+        {
+            var distinctItems = new List<DistinctResource>();
+            var outputFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), $"{nameof(AzResources)} - {sub.name} ({sub.id}).xlsx");
+            var file = new FileInfo(outputFile);
+            if (file.Exists)
+            {
+                ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
+                var input = Console.ReadKey();
+                if (input.Key != ConsoleKey.Y)
+                {
+                    return;
+                }
+                else
+                {
+                    Console.WriteLine("\n");
+                }
             }
 
-            var key = Console.ReadKey();
-            if (File.Exists(outputFile) && key.Key == ConsoleKey.O)
+            using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
+            {
+                if (rgs.Count == 0)
+                {
+                    var rgJson = await GetJson<dynamic>(string.Format(RgUrl, sub.id), tenant);
+                    var rgList = new List<(int index, string name, string id, string location)>();
+                    foreach (var r in (rgJson?.value as JArray).Select((item, i) => new { index = i + 1, item }))
+                    {
+                        rgList.Add((r.index, r.item.SelectToken(".name").Value<string>(), r.item.SelectToken(".id").Value<string>(), r.item.SelectToken(".location").Value<string>()));
+                    }
+
+                    rgs.Add(sub.id, rgList);
+                }
+
+                ColorConsole.WriteLine("\nResource Groups:");
+                foreach (var r in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                {
+                    ColorConsole.WriteLine($"{r.index}.".PadLeft(5).Green(), $" {r.name}");
+                }
+
+                ColorConsole.Write("\n> ".Green(), "ResouceGroup ID (hit ", "enter".Green(), " to fetch all the available ResourceGroups): ");
+                var rgInput = Console.ReadLine();
+                if (string.IsNullOrWhiteSpace(rgInput))
+                {
+                    foreach (var rg in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                    {
+                        await HandleResourceGroup(sub.id, rg.name, rg.index, distinctItems, pkg);
+                    }
+                }
+                else
+                {
+                    var rg = rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value.SingleOrDefault(r => r.index.ToString().Equals(rgInput) || r.name.Equals(rgInput) || r.id.Equals(rgInput));
+                    await HandleResourceGroup(sub.id, rg.name, 0, distinctItems, pkg);
+                }
+
+                WriteToTarget(distinctItems.Distinct(), -1, "Distinct_Resources", pkg);
+            }
+
+            ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
+            var open = Console.ReadKey();
+            if (File.Exists(outputFile) && open.Key == ConsoleKey.O)
             {
                 Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
             }
         }
 
-        private static async Task<AzResources> GetJson(string path, string tenant)
+        private static async Task HandleResourceGroup(string subId, string rgName, int index, List<DistinctResource> distinctItems, ExcelPackage pkg)
+        {
+            var url = $"https://management.azure.com/subscriptions/{subId}/resourceGroups/{rgName}/resources?api-version={ResourcesApiVersion}";
+            var azRes = (await GetJson<AzResources>(url, tenant))?.value?.OrderBy(x => x.id);
+            if (azRes == null)
+            {
+                ColorConsole.WriteLine("\nPress any key to quit...");
+                Console.ReadKey();
+                return;
+            }
+
+            var diagApiVersion = await GetApiVersion("microsoft.insights/diagnosticSettings", subId);
+            var header = azRes.FirstOrDefault().id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.FirstOrDefault().Trim(Slash); // .Replace(Slash, '_').Replace("subscriptions", "SUBSCRIPTION").Replace("resourceGroups", "RESOURCE-GROUP");
+            var results = azRes.Select(async x =>
+            {
+                ColorConsole.WriteLine("------------------------------");
+                ColorConsole.WriteLine($"\n{x.id}".Black().OnCyan());
+                var apiVersion = await GetApiVersion(x.type, subId);
+                var props = await GetProperties(x.id, apiVersion);
+                var diag = await GetDiagnosticSettings(x.id, diagApiVersion);
+                var ids = x.id?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault().Split(Slash);
+                var type = x.type?.Split(new[] { Slash }, 3);
+                var result = new
+                {
+                    COMPONENT = type[0].Replace($"{nameof(Microsoft)}.", string.Empty).Replace($"{nameof(Microsoft).ToUpperInvariant()}.", string.Empty).Replace($"{nameof(Microsoft).ToLowerInvariant()}.", string.Empty), // ids[0]
+                    MODULE = type[1], // ids[1]
+                    SUB_MODULE = type.Length > 2 ? type[2] : string.Empty,
+                    ID = ids[2],
+                    NAME = x.name,
+                    LOCATION = x.location,
+                    PROPS = props,
+                    DIAG_INFO = diag,
+                    KIND = x.kind,
+                    MANAGED_BY = x.managedBy?.Split(new[] { Separator }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault(),
+                    SKU_NAME = x.sku?.name,
+                    SKU_TIER = x.sku?.tier,
+                    SKU_CAPACITY = x.sku?.capacity,
+                    SKU_SIZE = x.sku?.size,
+                    SKU_FAMILY = x.sku?.family,
+                    TAGS = x.tags?.tier,
+                    IDENTITY = x.identity?.type,
+                };
+                return result;
+            });
+
+            var items = await Task.WhenAll(results);
+            var groups = items.GroupBy(i => i.COMPONENT);
+            var max = groups.Max(x => x.Count());
+            var distinct = items.Select(i => new DistinctResource { COMPONENT = i.COMPONENT, MODULE = i.MODULE, SUB_MODULE = i.SUB_MODULE }).Distinct();
+            distinctItems.AddRange(distinct);
+            WriteToTarget(items, index, header, pkg, groups.Count(), max);
+        }
+
+        private static async Task<T> GetJson<T>(string path, string tenant)
         {
             var result = string.Empty;
             if (File.Exists(path))
@@ -145,7 +239,7 @@
             }
             else
             {
-                AddAuthHeader(path, tenant);
+                AddAuthHeader(tenant);
                 var response = await Client.GetAsync(path).ConfigureAwait(false);
                 result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
@@ -162,10 +256,10 @@
                 }
             }
 
-            return JsonConvert.DeserializeObject<AzResources>(result);
+            return JsonConvert.DeserializeObject<T>(result);
         }
 
-        private static void AddAuthHeader(string path, string tenant)
+        private static void AddAuthHeader(string tenant)
         {
             var token = AuthHelper.GetAuthToken(tenant);
             Client.DefaultRequestHeaders.Remove(AuthHeader);
@@ -380,6 +474,19 @@
             });
 
             return results;
+        }
+
+        private static void PrintHelp()
+        {
+            ColorConsole.WriteLine(
+                new[]
+                {
+                    "--------------------------------------------------------------".Green(),
+                    "\nHit ", "Enter".Green(), " to proceed...",
+                    "\nEnter ", "c".Green(), " to clear the console",
+                    "\nEnter ", "q".Green(), " to quit",
+                    "\nEnter ", "?".Green(), " to print this help"
+                });
         }
     }
 

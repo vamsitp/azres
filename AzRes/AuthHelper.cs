@@ -3,14 +3,14 @@
     using System;
     using System.Collections.Concurrent;
     using System.Linq;
-    using System.Threading.Tasks;
+
     using Microsoft.IdentityModel.Clients.ActiveDirectory;
 
     class AuthHelper
     {
-        internal const string clientId = "872cd9fa-d31f-45e0-9eab-6e460a02d1f1";       // Change to your app registration's Application ID, unless you are an MSA backed account
-        internal const string replyUri = "urn:ietf:wg:oauth:2.0:oob";                  // Change to your app registration's reply URI, unless you are an MSA backed account
-        internal const string azureDevOpsResourceId = "https://management.azure.com"; // Constant value to target Azure DevOps. Do not change
+        internal const string ClientId = "872cd9fa-d31f-45e0-9eab-6e460a02d1f1";       // Change to your app registration's Application ID, unless you are an MSA backed account
+        internal const string ReplyUri = "urn:ietf:wg:oauth:2.0:oob";                  // Change to your app registration's reply URI, unless you are an MSA backed account
+        internal const string AzureDevOpsResourceId = "https://management.azure.com"; // Constant value to target Azure DevOps. Do not change
 
         internal static readonly ConcurrentDictionary<string, string> AuthTokens = new ConcurrentDictionary<string, string>();
 
@@ -24,12 +24,12 @@
 
                 try
                 {
-                    result = ctx.AcquireTokenAsync(azureDevOpsResourceId, clientId, new Uri(replyUri), promptBehavior).GetAwaiter().GetResult();
+                    result = ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior).GetAwaiter().GetResult();
                 }
                 catch (UnauthorizedAccessException)
                 {
                     // If the token has expired, prompt the user with a login prompt
-                    result = ctx.AcquireTokenAsync(azureDevOpsResourceId, clientId, new Uri(replyUri), promptBehavior).GetAwaiter().GetResult();
+                    result = ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior).GetAwaiter().GetResult();
                 }
 
                 return result?.AccessToken;
