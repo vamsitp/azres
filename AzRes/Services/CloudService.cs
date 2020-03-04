@@ -51,21 +51,31 @@
                 subs.Add(tenant, sbList);
             }
 
+            var subsValue = subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value;
             ColorConsole.WriteLine("\n", "Subscriptions".White().OnGreen());
-            foreach (var s in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
+            foreach (var s in subsValue)
             {
                 ColorConsole.WriteLine($"{s.index}.".PadLeft(5).Green(), $" {s.name} - {s.id} ({s.state})");
             }
 
-            ColorConsole.Write("\n> ".Green(), "Subscription ID (hit ", "enter".Green(), " to fetch all the available Subscriptions): ");
+            ColorConsole.Write("\n> ".Green(), "Subscription ID (hit ", "enter".Green(), " to process ResourceGroups from all Subscriptions): ");
             var subInput = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(subInput))
             {
-                ColorConsole.Write($"Process all Subscriptions? (", "Y/N".Green(), ") ".Yellow());
-                var input = Console.ReadKey();
-                if (input.Key == ConsoleKey.Y)
+                var proceed = subsValue.Count <= 1;
+                if (!proceed)
                 {
-                    foreach (var sub in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
+                    ColorConsole.Write($"Process all Subscriptions? (", "Y/N".Green(), ") ");
+                    var input = Console.ReadKey();
+                    if (input.Key != ConsoleKey.Y)
+                    {
+                        proceed = false;
+                    }
+                }
+
+                if (proceed)
+                {
+                    foreach (var sub in subsValue)
                     {
                         await HandleSubscription(tenant, sub, inputFile);
                     }
@@ -73,7 +83,7 @@
             }
             else
             {
-                var sub = subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value.SingleOrDefault(s => s.index.ToString().Equals(subInput) || s.name.Equals(subInput) || s.id.Equals(subInput));
+                var sub = subsValue.SingleOrDefault(s => s.index.ToString().Equals(subInput) || s.name.Equals(subInput) || s.id.Equals(subInput));
                 await HandleSubscription(tenant, sub, inputFile);
             }
         }
@@ -85,7 +95,7 @@
             var outputFileInfo = new FileInfo(outputFile);
             if (outputFileInfo.Exists)
             {
-                ColorConsole.Write($"{outputFile} already exists! Overwrite it? (", "Y/N".Green(), ") ".Yellow());
+                ColorConsole.Write($"{outputFile} already exists! Overwrite it? (".Yellow(), "Y/N".Green(), ") ".Yellow());
                 var input = Console.ReadKey();
                 if (input.Key != ConsoleKey.Y)
                 {
@@ -123,21 +133,31 @@
                     rgs.Add(sub.id, rgList);
                 }
 
+                var rgsValue = rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value;
                 ColorConsole.WriteLine("\n", "Resource Groups".White().OnGreen());
-                foreach (var r in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                foreach (var r in rgsValue)
                 {
                     ColorConsole.WriteLine($"{r.index}.".PadLeft(5).Green(), $" {r.name}");
                 }
 
-                ColorConsole.Write("\n> ".Green(), "ResouceGroup ID (hit ", "enter".Green(), " to fetch all the available ResourceGroups): ");
+                ColorConsole.Write("\n> ".Green(), "ResouceGroup ID (hit ", "enter".Green(), " to fetch Resources from all ResourceGroups): ");
                 var rgInput = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(rgInput))
                 {
-                    ColorConsole.Write($"Process all ResourceGroups? (", "Y/N".Green(), ") ".Yellow());
-                    var input = Console.ReadKey();
-                    if (input.Key == ConsoleKey.Y)
+                    var proceed = rgsValue.Count <= 1;
+                    if (!proceed)
                     {
-                        foreach (var rg in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                        ColorConsole.Write($"Process all ResourceGroups? (", "Y/N".Green(), ") ");
+                        var input = Console.ReadKey();
+                        if (input.Key != ConsoleKey.Y)
+                        {
+                            proceed = false;
+                        }
+                    }
+
+                    if (proceed)
+                    {
+                        foreach (var rg in rgsValue)
                         {
                             await HandleResourceGroup(tenant, sub.id, rg.name, rg.index, distinctItems, pkg, inputFile);
                         }
@@ -145,7 +165,7 @@
                 }
                 else
                 {
-                    var rg = rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value.SingleOrDefault(r => r.index.ToString().Equals(rgInput) || r.name.Equals(rgInput) || r.id.Equals(rgInput));
+                    var rg = rgsValue.SingleOrDefault(r => r.index.ToString().Equals(rgInput) || r.name.Equals(rgInput) || r.id.Equals(rgInput));
                     await HandleResourceGroup(tenant, sub.id, rg.name, 0, distinctItems, pkg, inputFile);
                 }
 

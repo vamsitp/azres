@@ -7,7 +7,7 @@ Generate Excel dump of Azure Resources
 #### USAGE
 `azres`
 
-- Enter **`s`** to process online **subscriptions**
+- Enter **`s`** to process online **subscriptions** (based on a *tenant* name)
 - Enter **`f`** to process offline **files** (JSON downloaded from `https://resources.azure.com/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupId}/resources`)
 - Enter **`c`** to **clear** the console
 - Enter **`q`** to **quit**
