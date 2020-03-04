@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 public class AzResources
 {
     public Value[] value { get; set; }
@@ -85,4 +88,29 @@ public class Resourcetype
     public string[] locations { get; set; }
     public string[] apiVersions { get; set; }
     public string capabilities { get; set; }
+}
+
+// Credit: https://github.com/JanKallman/EPPlus/issues/8
+public class DistinctResource
+{
+    public string COMPONENT { get; set; }
+    public string MODULE { get; set; }
+    public string SUB_MODULE { get; set; }
+
+    public override bool Equals(object obj)
+    {
+        return obj is DistinctResource resource &&
+               this.COMPONENT.Equals(resource.COMPONENT, StringComparison.OrdinalIgnoreCase) &&
+               this.MODULE.Equals(resource.MODULE, StringComparison.OrdinalIgnoreCase) &&
+               this.SUB_MODULE.Equals(resource.SUB_MODULE, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public override int GetHashCode()
+    {
+        var hashCode = -1522090145;
+        hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.COMPONENT);
+        hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.MODULE);
+        hashCode = hashCode * -1521134295 + EqualityComparer<string>.Default.GetHashCode(this.SUB_MODULE);
+        return hashCode;
+    }
 }
