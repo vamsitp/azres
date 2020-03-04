@@ -39,7 +39,6 @@
         private const string SubUrl = "https://management.azure.com/subscriptions?api-version=" + BaseApiVersion;
         private const string RgUrl = "https://management.azure.com/subscriptions/{0}/resourceGroups?api-version=" + BaseApiVersion;
 
-        private static string tenant = string.Empty;
         private static Dictionary<string, List<(int index, string name, string id, string state)>> subs = new Dictionary<string, List<(int index, string name, string id, string state)>>();
         private static Dictionary<string, List<(int index, string name, string id, string location)>> rgs = new Dictionary<string, List<(int index, string name, string id, string location)>>();
 
@@ -50,10 +49,15 @@
             PrintHelp();
             do
             {
+                var tenant = string.Empty;
                 ColorConsole.Write("\n> ".Green());
                 var key = Console.ReadLine()?.Trim();
-
-                if (key.Equals("q", StringComparison.OrdinalIgnoreCase) || key.StartsWith("quit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("exit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("close", StringComparison.OrdinalIgnoreCase))
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    PrintHelp();
+                    continue;
+                }
+                else if (key.Equals("q", StringComparison.OrdinalIgnoreCase) || key.StartsWith("quit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("exit", StringComparison.OrdinalIgnoreCase) || key.StartsWith("close", StringComparison.OrdinalIgnoreCase))
                 {
                     ColorConsole.WriteLine("DONE!".White().OnDarkGreen());
                     break;
@@ -66,17 +70,17 @@
                 {
                     Console.Clear();
                 }
-                else
+                else // if (key.Equals("p", StringComparison.OrdinalIgnoreCase))
                 {
                     ColorConsole.Write("> ".Green(), "Azure AD Tenant ID (hit ", "enter".Green(), " to use the ", "common".Green(), $" tenant): {tenant}");
                     tenant = Console.ReadLine();
-                    await HandleTenant(tenant);
+                    await HandleSubscriptions(tenant);
                 }
             }
             while (true);
         }
 
-        private static async Task HandleTenant(string tenant)
+        private static async Task HandleSubscriptions(string tenant)
         {
             if (subs.Count == 0)
             {
@@ -90,7 +94,7 @@
                 subs.Add(tenant, sbList);
             }
 
-            ColorConsole.WriteLine("\nSubscriptions:");
+            ColorConsole.WriteLine("\n", "Subscriptions".White().OnGreen());
             foreach (var s in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
             {
                 ColorConsole.WriteLine($"{s.index}.".PadLeft(5).Green(), $" {s.name} - {s.id} ({s.state})");
@@ -100,9 +104,14 @@
             var subInput = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(subInput))
             {
-                foreach (var sub in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
+                ColorConsole.Write($"Process all Subscriptions? (", "Y/N".Green(), ") ".Yellow());
+                var input = Console.ReadKey();
+                if (input.Key != ConsoleKey.Y)
                 {
-                    await HandleSubscription(tenant, sub);
+                    foreach (var sub in subs.SingleOrDefault(x => x.Key.Equals(tenant)).Value)
+                    {
+                        await HandleSubscription(tenant, sub);
+                    }
                 }
             }
             else
@@ -119,7 +128,7 @@
             var file = new FileInfo(outputFile);
             if (file.Exists)
             {
-                ColorConsole.Write($"{outputFile} already exists! Overwrite it? (Y/N) ".Yellow());
+                ColorConsole.Write($"{outputFile} already exists! Overwrite it? (", "Y/N".Green(), ") ".Yellow());
                 var input = Console.ReadKey();
                 if (input.Key != ConsoleKey.Y)
                 {
@@ -131,6 +140,18 @@
                 }
             }
 
+            await HadleResourceGroups(tenant, sub, distinctItems, file);
+
+            ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
+            var open = Console.ReadKey();
+            if (File.Exists(outputFile) && open.Key == ConsoleKey.O)
+            {
+                Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
+            }
+        }
+
+        private static async Task HadleResourceGroups(string tenant, (int index, string name, string id, string state) sub, List<DistinctResource> distinctItems, FileInfo file)
+        {
             using (var pkg = new ExcelPackage(file)) //file.OpenWrite()
             {
                 if (rgs.Count == 0)
@@ -145,7 +166,7 @@
                     rgs.Add(sub.id, rgList);
                 }
 
-                ColorConsole.WriteLine("\nResource Groups:");
+                ColorConsole.WriteLine("\n", "Resource Groups".White().OnGreen());
                 foreach (var r in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
                 {
                     ColorConsole.WriteLine($"{r.index}.".PadLeft(5).Green(), $" {r.name}");
@@ -155,29 +176,27 @@
                 var rgInput = Console.ReadLine();
                 if (string.IsNullOrWhiteSpace(rgInput))
                 {
-                    foreach (var rg in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                    ColorConsole.Write($"Process all ResourceGroups? (", "Y/N".Green(), ") ".Yellow());
+                    var input = Console.ReadKey();
+                    if (input.Key != ConsoleKey.Y)
                     {
-                        await HandleResourceGroup(sub.id, rg.name, rg.index, distinctItems, pkg);
+                        foreach (var rg in rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value)
+                        {
+                            await HandleResourceGroup(tenant, sub.id, rg.name, rg.index, distinctItems, pkg);
+                        }
                     }
                 }
                 else
                 {
                     var rg = rgs.SingleOrDefault(x => x.Key.Equals(sub.id)).Value.SingleOrDefault(r => r.index.ToString().Equals(rgInput) || r.name.Equals(rgInput) || r.id.Equals(rgInput));
-                    await HandleResourceGroup(sub.id, rg.name, 0, distinctItems, pkg);
+                    await HandleResourceGroup(tenant, sub.id, rg.name, 0, distinctItems, pkg);
                 }
 
                 WriteToTarget(distinctItems.Distinct(), -1, "Distinct_Resources", pkg);
             }
-
-            ColorConsole.WriteLine($"Output saved to: {outputFile}\nPress 'O' to open the file or any other key to exit...".White().OnGreen());
-            var open = Console.ReadKey();
-            if (File.Exists(outputFile) && open.Key == ConsoleKey.O)
-            {
-                Process.Start(new ProcessStartInfo(outputFile) { UseShellExecute = true });
-            }
         }
 
-        private static async Task HandleResourceGroup(string subId, string rgName, int index, List<DistinctResource> distinctItems, ExcelPackage pkg)
+        private static async Task HandleResourceGroup(string tenant, string subId, string rgName, int index, List<DistinctResource> distinctItems, ExcelPackage pkg)
         {
             var url = $"https://management.azure.com/subscriptions/{subId}/resourceGroups/{rgName}/resources?api-version={ResourcesApiVersion}";
             var azRes = (await GetJson<AzResources>(url, tenant))?.value?.OrderBy(x => x.id);
@@ -482,7 +501,7 @@
                 new[]
                 {
                     "--------------------------------------------------------------".Green(),
-                    "\nHit ", "Enter".Green(), " to proceed...",
+                    "\nEnter ", "p".Green(), " to proceed",
                     "\nEnter ", "c".Green(), " to clear the console",
                     "\nEnter ", "q".Green(), " to quit",
                     "\nEnter ", "?".Green(), " to print this help"
