@@ -3,7 +3,6 @@
     using System;
     using System.Collections.Concurrent;
     using System.Linq;
-    using System.Windows.Threading;
 
     using Microsoft.IdentityModel.Clients.ActiveDirectory;
 
@@ -21,7 +20,7 @@
             {
                 var ctx = GetAuthenticationContext(tenantId);
                 AuthenticationResult result = null;
-                var promptBehavior = new PlatformParameters(PromptBehavior.SelectAccount, new CustomWebUi(Dispatcher.CurrentDispatcher));
+                var promptBehavior = new PlatformParameters(PromptBehavior.SelectAccount, new CustomWebUi());
 
                 try
                 {

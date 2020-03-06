@@ -17,7 +17,6 @@
         private static HttpClient Client = new HttpClient();
 
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
-        [STAThread]
         static async Task Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;

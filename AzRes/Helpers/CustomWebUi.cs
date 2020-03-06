@@ -4,7 +4,6 @@
     using System.Threading;
     using System.Threading.Tasks;
     using System.Windows;
-    using System.Windows.Threading;
 
     using Microsoft.IdentityModel.Clients.ActiveDirectory.Extensibility;
     using Microsoft.Toolkit.Wpf.UI.Controls;
@@ -12,13 +11,6 @@
     // Credit: https://techcommunity.microsoft.com/t5/windows-dev-appconsult/how-to-use-active-directory-authentication-library-adal-for-net/ba-p/400623#
     class CustomWebUi : ICustomWebUi
     {
-        private readonly Dispatcher dispatcher;
-
-        public CustomWebUi(Dispatcher dispatcher)
-        {
-            this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
-        }
-
         public async Task<Uri> AcquireAuthorizationCodeAsync(Uri authorizationUri, Uri redirectUri)
         {
             var tcs = new TaskCompletionSource<Uri>();
@@ -28,10 +20,6 @@
             thread.SetApartmentState(ApartmentState.STA); //Set the thread to STA
             thread.Start();
             thread.Join();
-            //await this.dispatcher.InvokeAsync(() =>
-            //{
-            //    AcquireAuthorizationCodeAsync(authorizationUri, tcs);
-            //});
             return await tcs.Task;
         }
 
@@ -40,9 +28,12 @@
             var webView = new WebView();
             var w = new Window
             {
-                Title = "Auth",
+                Title = "Sign in to your account",
                 WindowStyle = WindowStyle.ToolWindow,
                 Content = webView,
+                Width = 600,
+                Height = 800,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen
             };
 
             w.Loaded += (_, __) => webView.Navigate(authorizationUri);
