@@ -18,14 +18,10 @@
     <RepositoryUrl>https://github.com/vamsitp/azres</RepositoryUrl>
     <PackageTags>Azure Resources;Excel;xlsx</PackageTags>
     <Company>Microsoft</Company>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <StartupObject>AzRes.Program</StartupObject>
     <ApplicationIcon />
     <Deterministic>false</Deterministic>
-  </PropertyGroup>
-
-  <PropertyGroup Condition="'$(TargetFramework)' == 'netcoreapp3.1'">
-    <PackAsTool>true</PackAsTool>
   </PropertyGroup>
 
   <ItemGroup>

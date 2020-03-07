@@ -14,10 +14,11 @@
         public async Task<Uri> AcquireAuthorizationCodeAsync(Uri authorizationUri, Uri redirectUri)
         {
             var tcs = new TaskCompletionSource<Uri>();
-            var thread = new Thread(() => {
+            var thread = new Thread(() =>
+            {
                 AcquireAuthorizationCodeAsync(authorizationUri, tcs);
             });
-            thread.SetApartmentState(ApartmentState.STA); //Set the thread to STA
+            thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
             thread.Join();
             return await tcs.Task;
@@ -70,6 +71,8 @@
                 }
             };
 
+            // w.Activate();
+            // w.BringIntoView();
             if (w.ShowDialog() != true && !tcs.Task.IsCompleted)
             {
                 tcs.SetException(new Exception("canceled"));

@@ -19,6 +19,7 @@
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
         static async Task Main(string[] args)
         {
+            // Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             PrintHelp();
             var tenant = string.Empty;

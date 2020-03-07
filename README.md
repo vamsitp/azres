@@ -28,10 +28,14 @@ dotnet tool install -g azres --version 1.0.x
 # Uninstall
 dotnet tool uninstall -g azres
 ```
-> **NOTE**: If the Tool is not accesible post installation, add `%USERPROFILE%\.dotnet\tools` to the PATH env-var.
+> **NOTE**: If the Tool is not accessible post installation, add `%USERPROFILE%\.dotnet\tools` to the PATH env-var.
 
 ##### CONTRIBUTION
 ```batch
+
+# WebView fix
+Copy (Drag-&-Drop) `.\bin\x64\Debug\netcoreapp3.1\azres.exe` into `.\bin\AzRes.1.0.6.nupkg\tools\netcoreapp3.1\any\`
+
 # Install from local project path
 dotnet tool install -g --add-source ./bin azres
 

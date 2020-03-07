@@ -259,6 +259,7 @@
 
         private static void AddAuthHeader(string tenant)
         {
+            ColorConsole.Write("Authenticating...", " (check if the window is hidden behind)".Green());
             var token = AuthHelper.GetAuthToken(tenant);
             Client.DefaultRequestHeaders.Remove(AuthHeader);
             Client.DefaultRequestHeaders.Add(AuthHeader, Bearer + token);
