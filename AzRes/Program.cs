@@ -49,7 +49,7 @@
                     }
                     else if (key.Equals("s", StringComparison.OrdinalIgnoreCase) || key.Equals("a", StringComparison.OrdinalIgnoreCase))
                     {
-                        ColorConsole.Write("> ".Green(), $"Azure (AD) Tenant/Directory name (e.g. ", "abc".Green(), $" in 'abc.onmicrosoft.com'): {tenant}");
+                        ColorConsole.Write("> ".Green(), $"Azure (AD) Tenant/Directory name (e.g. ", "abc".Green(), $" in 'abc.onmicrosoft.com'): ");
                         tenant = Console.ReadLine();
                         if (!Guid.TryParse(tenant, out var tenantId))
                         {
@@ -58,6 +58,7 @@
                             var result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                             var json = JsonConvert.DeserializeObject<JObject>(result);
                             tenant = json?.SelectToken(".issuer")?.Value<string>()?.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault();
+                            ColorConsole.WriteLine("ID: ", tenant.Green());
                         }
 
                         await CloudService.HandleSubscriptions(tenant, key);
