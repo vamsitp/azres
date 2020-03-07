@@ -5,6 +5,8 @@
     using System.Threading.Tasks;
     using System.Windows;
 
+    using ColoredConsole;
+
     using Microsoft.IdentityModel.Clients.ActiveDirectory.Extensibility;
     using Microsoft.Toolkit.Wpf.UI.Controls;
 
@@ -13,6 +15,7 @@
     {
         public async Task<Uri> AcquireAuthorizationCodeAsync(Uri authorizationUri, Uri redirectUri)
         {
+            ColorConsole.Write("Authenticating...", " (check if the window is hidden behind)".Green());
             var tcs = new TaskCompletionSource<Uri>();
             var thread = new Thread(() =>
             {
