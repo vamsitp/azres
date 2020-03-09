@@ -41,6 +41,7 @@
     </Reference>
   </ItemGroup>
 
+  <!--https://github.com/NuGet/Home/issues/7001-->
   <Target Name="PostBuild" AfterTargets="PostBuildEvent">
     <Exec Command="powershell -Command &quot;&amp; {Get-ChildItem -Path '.\bin\x64\Debug\netcoreapp3.1' -File -Recurse | foreach-object {$_.LastWriteTime = (Get-Date)}}&quot;" />
   </Target>
