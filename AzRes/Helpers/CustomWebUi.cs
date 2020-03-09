@@ -15,12 +15,8 @@
     {
         public async Task<Uri> AcquireAuthorizationCodeAsync(Uri authorizationUri, Uri redirectUri)
         {
-            ColorConsole.Write("Authenticating...", " (check if the window is hidden behind)".Green());
             var tcs = new TaskCompletionSource<Uri>();
-            var thread = new Thread(() =>
-            {
-                AcquireAuthorizationCodeAsync(authorizationUri, tcs);
-            });
+            var thread = new Thread(() => AcquireAuthorizationCodeAsync(authorizationUri, tcs));
             thread.SetApartmentState(ApartmentState.STA);
             thread.Start();
             thread.Join();
@@ -74,8 +70,10 @@
                 }
             };
 
-            // w.Activate();
-            // w.BringIntoView();
+            w.Activate();
+            w.BringIntoView();
+            w.Topmost = true;
+            w.Focus();
             if (w.ShowDialog() != true && !tcs.Task.IsCompleted)
             {
                 tcs.SetException(new Exception("canceled"));

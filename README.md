@@ -33,9 +33,6 @@ dotnet tool uninstall -g azres
 ##### CONTRIBUTION
 ```batch
 
-# WebView fix
-Copy (Drag-&-Drop) `.\bin\x64\Debug\netcoreapp3.1\azres.exe` into `.\bin\AzRes.1.0.6.nupkg\tools\netcoreapp3.1\any\`
-
 # Install from local project path
 dotnet tool install -g --add-source ./bin azres
 

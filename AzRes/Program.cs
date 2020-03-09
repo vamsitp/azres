@@ -17,6 +17,7 @@
         private static HttpClient Client = new HttpClient();
 
         // e.g.: "https://management.azure.com/subscriptions/{subscription-id}/resourceGroups/{resourceGroup-id}/resources?api-version=2017-05-10"
+        [STAThread]
         static async Task Main(string[] args)
         {
             // Thread.CurrentThread.SetApartmentState(ApartmentState.STA);
@@ -54,8 +55,8 @@
                         if (!Guid.TryParse(tenant, out var tenantId))
                         {
                             var tenantName = tenant.ToLowerInvariant().Replace(".onmicrosoft.com", string.Empty);
-                            var response = await Client.GetAsync(string.Format(TenantInfoUrl, tenantName)).ConfigureAwait(false);
-                            var result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                            var response = await Client.GetAsync(string.Format(TenantInfoUrl, tenantName));
+                            var result = await response.Content.ReadAsStringAsync();
                             var json = JsonConvert.DeserializeObject<JObject>(result);
                             tenant = json?.SelectToken(".issuer")?.Value<string>()?.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)?.LastOrDefault();
                             ColorConsole.WriteLine("ID: ", tenant.Green());

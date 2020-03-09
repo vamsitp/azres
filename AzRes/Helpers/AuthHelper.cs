@@ -3,6 +3,9 @@
     using System;
     using System.Collections.Concurrent;
     using System.Linq;
+    using System.Threading.Tasks;
+
+    using ColoredConsole;
 
     using Microsoft.IdentityModel.Clients.ActiveDirectory;
 
@@ -12,28 +15,31 @@
         internal const string ReplyUri = "urn:ietf:wg:oauth:2.0:oob";                  // Change to your app registration's reply URI, unless you are an MSA backed account
         internal const string AzureDevOpsResourceId = "https://management.azure.com"; // Constant value to target Azure DevOps. Do not change
 
-        internal static readonly ConcurrentDictionary<string, string> AuthTokens = new ConcurrentDictionary<string, string>();
+        internal static readonly ConcurrentDictionary<string, Lazy<Task<string>>> AuthTokens = new ConcurrentDictionary<string, Lazy<Task<string>>>();
 
-        public static string GetAuthToken(string tenantId)
+        public static async Task<string> GetAuthToken(string tenantId)
         {
-            var accessToken = AuthTokens.GetOrAdd(tenantId ?? string.Empty, k =>
+            var accessToken = await AuthTokens.GetOrAdd(tenantId ?? string.Empty, k =>
             {
-                var ctx = GetAuthenticationContext(tenantId);
-                AuthenticationResult result = null;
-                var promptBehavior = new PlatformParameters(PromptBehavior.SelectAccount, new CustomWebUi());
-
-                try
+                return new Lazy<Task<string>>(async () =>
                 {
-                    result = ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior).GetAwaiter().GetResult();
-                }
-                catch (UnauthorizedAccessException)
-                {
-                    // If the token has expired, prompt the user with a login prompt
-                    result = ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior).GetAwaiter().GetResult();
-                }
+                    var ctx = GetAuthenticationContext(tenantId);
+                    AuthenticationResult result = null;
+                    var promptBehavior = new PlatformParameters(PromptBehavior.SelectAccount, new CustomWebUi());
+                    ColorConsole.Write("Authenticating...\n");
+                    try
+                    {
+                        result = await ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior);
+                    }
+                    catch (UnauthorizedAccessException)
+                    {
+                        // If the token has expired, prompt the user with a login prompt
+                        result = await ctx.AcquireTokenAsync(AzureDevOpsResourceId, ClientId, new Uri(ReplyUri), promptBehavior);
+                    }
 
-                return result?.AccessToken;
-            });
+                    return result?.AccessToken;
+                });
+            }).Value;
 
             return accessToken;
         }

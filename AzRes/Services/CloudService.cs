@@ -71,6 +71,11 @@
                     {
                         proceed = false;
                     }
+                    else
+                    {
+                        proceed = true;
+                        Console.WriteLine("\n");
+                    }
                 }
 
                 if (proceed)
@@ -103,6 +108,7 @@
                 }
                 else
                 {
+                    File.Delete(outputFile);
                     Console.WriteLine("\n");
                 }
             }
@@ -152,6 +158,11 @@
                         if (input.Key != ConsoleKey.Y)
                         {
                             proceed = false;
+                        }
+                        else
+                        {
+                            proceed = true;
+                            Console.WriteLine("\n");
                         }
                     }
 
@@ -237,9 +248,9 @@
             }
             else
             {
-                AddAuthHeader(tenant);
-                var response = await Client.GetAsync(path).ConfigureAwait(false);
-                result = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                await AddAuthHeader(tenant);
+                var response = await Client.GetAsync(path);
+                result = await response.Content.ReadAsStringAsync();
                 if (!response.IsSuccessStatusCode)
                 {
                     var err = JsonConvert.DeserializeObject<InvalidAuthTokenError>(result);
@@ -257,9 +268,9 @@
             return JsonConvert.DeserializeObject<T>(result);
         }
 
-        private static void AddAuthHeader(string tenant)
+        private static async Task AddAuthHeader(string tenant)
         {
-            var token = AuthHelper.GetAuthToken(tenant);
+            var token = await AuthHelper.GetAuthToken(tenant);
             Client.DefaultRequestHeaders.Remove(AuthHeader);
             Client.DefaultRequestHeaders.Add(AuthHeader, Bearer + token);
         }
@@ -272,9 +283,9 @@
             {
                 var types = resourceType.Split(new[] { '/' }, 2);
                 var url = $"https://management.azure.com/subscriptions/{subscription}/providers/{types[0]}?api-version={result}";
-                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                var response = await Client.GetAsync(url);
                 ColorConsole.WriteLine($"ApiVersion - {response.StatusCode}: {subscription}/{resourceType}".White().OnDarkBlue());
-                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var output = await response.Content.ReadAsStringAsync();
                 if (!string.IsNullOrWhiteSpace(output))
                 {
                     var obj = JsonConvert.DeserializeObject<ResourceType>(output);
@@ -306,9 +317,9 @@
             try
             {
                 var url = $"https://management.azure.com{resource}?api-version={apiVersion}";
-                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                var response = await Client.GetAsync(url);
                 ColorConsole.WriteLine($"Properties - {response.StatusCode}: {resource}".White().OnDarkGreen());
-                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var output = await response.Content.ReadAsStringAsync();
                 if (!string.IsNullOrWhiteSpace(output))
                 {
                     var obj = JsonConvert.DeserializeObject<JObject>(output);
@@ -352,9 +363,9 @@
             string url = $"https://management.azure.com{resource}/providers/microsoft.insights/diagnosticSettings?api-version={apiVersion}";
             try
             {
-                var response = await Client.GetAsync(url).ConfigureAwait(false);
+                var response = await Client.GetAsync(url);
                 ColorConsole.WriteLine($"DiagnosticSettings - {response.StatusCode}: {resource}".White().OnDarkMagenta());
-                var output = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var output = await response.Content.ReadAsStringAsync();
                 if (!string.IsNullOrWhiteSpace(output))
                 {
                     var diag = JsonConvert.DeserializeObject<DiagInfo>(output);
